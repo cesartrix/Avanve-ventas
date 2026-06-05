@@ -744,7 +744,7 @@ async function autoLoadFromServer() {
     const info = await r.json();
     const msg = document.getElementById('splash-msg');
     if (msg) msg.textContent = 'Descargando datos...';
-    const fileResp = await fetch(info.url);
+    const fileResp = await fetch(info.url + '?t=' + Date.now());
     if (!fileResp.ok) throw new Error('No se pudo descargar el archivo');
     const arrayBuffer = await fileResp.arrayBuffer();
     document.getElementById('splash').style.display='none';
