@@ -313,6 +313,7 @@ function parseWB(wb, fname) {
     const iSup   = newFormat ? ci('SUPERVISOR') : -1;
     const iVen   = newFormat ? ci('VENDEDOR') : ci('VENDEDOR/ SUPERVISOR') > -1 ? ci('VENDEDOR/ SUPERVISOR') : 0;
     const iObj   = ci('OBJETIVO');
+    const iProyec = ci('PROYECCION');
     const iFact  = ci('FACTURACION ACUMULADA');
     const iAv    = ci('AVANCE VS OBJETIVO');
     const iCumpl = ci('CUMPLIMIENTO PROYECTADO');
@@ -355,7 +356,7 @@ function parseWB(wb, fname) {
           objetivo: Math.round(obj),
           facturacion: Math.round(n(row[iFact])),
           avance_pct: parseFloat((n(row[iAv])*100).toFixed(1)),
-          cumplimiento: parseFloat((n(row[iCumpl])*100).toFixed(1)),
+          cumplimiento: parseFloat((iProyec>=0 && iObj>=0 && n(row[iObj]) ? (n(row[iProyec])/n(row[iObj])*100) : n(row[iCumpl])*100).toFixed(1)),
           media_real: Math.round(n(row[iMR])),
           media_nec: Math.round(n(row[iMN])),
           cobro: Math.round(n(row[iCobro])),
@@ -383,7 +384,7 @@ function parseWB(wb, fname) {
           objetivo: Math.round(obj),
           facturacion: Math.round(n(row[iFact])),
           avance_pct: parseFloat((n(row[iAv])*100).toFixed(1)),
-          cumplimiento: parseFloat((n(row[iCumpl])*100).toFixed(1)),
+          cumplimiento: parseFloat((iProyec>=0 && iObj>=0 && n(row[iObj]) ? (n(row[iProyec])/n(row[iObj])*100) : n(row[iCumpl])*100).toFixed(1)),
           media_real: Math.round(n(row[iMR])),
           media_nec: Math.round(n(row[iMN])),
           cobro: Math.round(n(row[iCobro])),
