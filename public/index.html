@@ -52,7 +52,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .sbtn[data-s="MARTIN PREVENTA"].active{background:#00d4aa;}
 .sbtn[data-s="MARTIN"].active{background:#7b61ff;}
 .sbtn[data-s="CRISTIAN"].active{background:#ff6b35;}
-.sbtn[data-s="NELSON"].active{background:#ffcc00;}
+.sbtn[data-s="GONZALO"].active{background:#ffcc00;}
 .sbtn[data-s="SIN SUPERVISOR"].active{background:#5a6072;color:var(--text);}
 
 .stabs{background:var(--surface);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;gap:4px;overflow-x:auto;position:sticky;top:97px;z-index:190;}
@@ -171,7 +171,7 @@ tr.sup-group-sum td{
     <button class="sbtn" data-s="MARTIN PREVENTA" onclick="setSup('MARTIN PREVENTA',this)">🟢 Martín Preventa</button>
     <button class="sbtn" data-s="MARTIN" onclick="setSup('MARTIN',this)">🟣 Martín</button>
     <button class="sbtn" data-s="CRISTIAN" onclick="setSup('CRISTIAN',this)">🟠 Cristian</button>
-    <button class="sbtn" data-s="NELSON" onclick="setSup('NELSON',this)">🟡 Nelson</button>
+    <button class="sbtn" data-s="GONZALO" onclick="setSup('GONZALO',this)">🟡 Gonzalo</button>
     <button class="sbtn" data-s="SIN SUPERVISOR" onclick="setSup('SIN SUPERVISOR',this)">⚫ Sin sup.</button>
   </div>
   <div class="stabs">
@@ -233,13 +233,13 @@ const SUP_KEY_MAP = [
   { key: 'PREVENTA',        label: 'MARTIN PREVENTA' },
   { key: 'MARTIN',          label: 'MARTIN' },
   { key: 'CRISTIAN',        label: 'CRISTIAN' },
-  { key: 'NELSON',          label: 'NELSON' },
+  { key: 'GONZALO',          label: 'GONZALO' },
 ];
 // Códigos de vendedores SIN supervisor conocido
 const NO_SUP_CODES = new Set(['58','59']);
 
-const SC = {'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','NELSON':'#ffcc00','SIN SUPERVISOR':'#5a6072'};
-const SL = {'MARTIN PREVENTA':'Martín Preventa','MARTIN':'Martín','CRISTIAN':'Cristian','NELSON':'Nelson','SIN SUPERVISOR':'Sin sup.'};
+const SC = {'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','GONZALO':'#ffcc00','SIN SUPERVISOR':'#5a6072'};
+const SL = {'MARTIN PREVENTA':'Martín Preventa','MARTIN':'Martín','CRISTIAN':'Cristian','GONZALO':'Gonzalo','SIN SUPERVISOR':'Sin sup.'};
 const SUPS = Object.keys(SC);
 
 let A=[], COB=[], cur='TODOS', CH={};
@@ -613,7 +613,7 @@ ${document.querySelector('style').textContent}
   <button class="sbtn" data-s="MARTIN PREVENTA" onclick="setSup('MARTIN PREVENTA',this)">🟢 Martín Preventa</button>
   <button class="sbtn" data-s="MARTIN" onclick="setSup('MARTIN',this)">🟣 Martín</button>
   <button class="sbtn" data-s="CRISTIAN" onclick="setSup('CRISTIAN',this)">🟠 Cristian</button>
-  <button class="sbtn" data-s="NELSON" onclick="setSup('NELSON',this)">🟡 Nelson</button>
+  <button class="sbtn" data-s="GONZALO" onclick="setSup('GONZALO',this)">🟡 Gonzalo</button>
   <button class="sbtn" data-s="SIN SUPERVISOR" onclick="setSup('SIN SUPERVISOR',this)">⚫ Sin sup.</button>
 </div>
 <div class="stabs">
@@ -668,8 +668,8 @@ ${document.querySelector('style').textContent}
 <script>
 const A=${JSON.stringify(A)};
 const COB=${JSON.stringify(COB)};
-const SC={'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','NELSON':'#ffcc00','SIN SUPERVISOR':'#5a6072'};
-const SL={'MARTIN PREVENTA':'Martín Preventa','MARTIN':'Martín','CRISTIAN':'Cristian','NELSON':'Nelson','SIN SUPERVISOR':'Sin sup.'};
+const SC={'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','GONZALO':'#ffcc00','SIN SUPERVISOR':'#5a6072'};
+const SL={'MARTIN PREVENTA':'Martín Preventa','MARTIN':'Martín','CRISTIAN':'Cristian','GONZALO':'Gonzalo','SIN SUPERVISOR':'Sin sup.'};
 const SUPS=Object.keys(SC);
 let cur='TODOS',CH={};
 const fmt=v=>'$'+Math.round(v).toLocaleString('es-AR');
