@@ -557,7 +557,7 @@ function renderAv(){
     // Subtotal row
     const tf=group.reduce((s,x)=>s+x.facturacion,0);
     const to=group.reduce((s,x)=>s+x.objetivo,0);
-    const avgC=(group.reduce((s,x)=>s+x.cumplimiento,0)/group.length).toFixed(1);
+    const avgC=(to>0?group.reduce((s,x)=>s+x.proyeccion,0)/to*100:0).toFixed(1);
     const ok=group.filter(x=>x.cumplimiento>=100).length;
     const tc=group.reduce((s,x)=>s+x.cobro,0);
     rows+=`<tr class="sup-group-sum">
