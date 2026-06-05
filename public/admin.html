@@ -14,7 +14,6 @@
     --accent: #00d4aa;
     --accent2: #7b61ff;
     --danger: #ff4545;
-    --warn: #ffcc00;
     --text: #e8eaf0;
     --muted: #5a6072;
     --mono: 'DM Mono', monospace;
@@ -38,7 +37,6 @@
                 radial-gradient(ellipse 50% 50% at 20% 80%, #7b61ff08 0%, transparent 60%);
     pointer-events: none;
   }
-
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -48,204 +46,67 @@
     max-width: 480px;
     position: relative;
   }
-
-  .logo {
-    font-family: var(--head);
-    font-size: 0.65rem;
-    letter-spacing: 0.2em;
-    color: var(--muted);
-    text-transform: uppercase;
-    margin-bottom: 8px;
-  }
-  h1 {
-    font-family: var(--head);
-    font-size: 1.8rem;
-    font-weight: 800;
-    color: var(--text);
-    line-height: 1.1;
-    margin-bottom: 32px;
-  }
+  .logo { font-family: var(--head); font-size: 0.65rem; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+  h1 { font-family: var(--head); font-size: 1.8rem; font-weight: 800; color: var(--text); line-height: 1.1; margin-bottom: 32px; }
   h1 span { color: var(--accent); }
-
-  /* LOGIN SECTION */
   #login-section { display: block; }
   #app-section { display: none; }
-
-  label {
-    display: block;
-    font-size: 0.7rem;
-    letter-spacing: 0.12em;
-    color: var(--muted);
-    text-transform: uppercase;
-    margin-bottom: 8px;
-  }
-  input[type="password"], input[type="text"] {
-    width: 100%;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 0.9rem;
-    padding: 12px 16px;
-    outline: none;
-    transition: border-color 0.2s;
+  label { display: block; font-size: 0.7rem; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+  input[type="password"] {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-family: var(--mono);
+    font-size: 0.9rem; padding: 12px 16px; outline: none; transition: border-color 0.2s;
   }
   input:focus { border-color: var(--accent); }
-  input.error { border-color: var(--danger); }
-
   .btn {
-    width: 100%;
-    margin-top: 16px;
-    padding: 14px;
-    background: var(--accent);
-    color: #0a0b0f;
-    border: none;
-    border-radius: 8px;
-    font-family: var(--head);
-    font-size: 0.85rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    cursor: pointer;
+    width: 100%; margin-top: 16px; padding: 14px;
+    background: var(--accent); color: #0a0b0f; border: none; border-radius: 8px;
+    font-family: var(--head); font-size: 0.85rem; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
     transition: opacity 0.2s, transform 0.1s;
   }
   .btn:hover { opacity: 0.88; }
   .btn:active { transform: scale(0.98); }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-  .btn.secondary {
-    background: transparent;
-    color: var(--muted);
-    border: 1px solid var(--border);
-    margin-top: 10px;
-  }
-  .btn.secondary:hover { color: var(--text); border-color: var(--muted); }
-
-  .err-msg {
-    color: var(--danger);
-    font-size: 0.75rem;
-    margin-top: 8px;
-    display: none;
-  }
+  .err-msg { color: var(--danger); font-size: 0.75rem; margin-top: 8px; display: none; }
   .err-msg.show { display: block; }
-
-  /* DROP ZONE */
   .drop-zone {
-    border: 2px dashed var(--border);
-    border-radius: 12px;
-    padding: 40px 24px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
-    position: relative;
-    margin-bottom: 20px;
+    border: 2px dashed var(--border); border-radius: 12px; padding: 40px 24px;
+    text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;
+    position: relative; margin-bottom: 20px;
   }
   .drop-zone:hover, .drop-zone.drag { border-color: var(--accent); background: #00d4aa08; }
-  .drop-zone input[type="file"] {
-    position: absolute; inset: 0; opacity: 0; cursor: pointer;
-    width: 100%; height: 100%;
-  }
+  .drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
   .drop-icon { font-size: 2.5rem; margin-bottom: 12px; }
-  .drop-label {
-    font-family: var(--head);
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 6px;
-  }
-  .drop-sub {
-    font-size: 0.72rem;
-    color: var(--muted);
-  }
-
-  /* FILE SELECTED */
-  .file-info {
-    display: none;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 16px;
-    margin-bottom: 20px;
-    gap: 12px;
-    align-items: center;
-  }
+  .drop-label { font-family: var(--head); font-size: 0.95rem; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .drop-sub { font-size: 0.72rem; color: var(--muted); }
+  .file-info { display: none; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 20px; gap: 12px; align-items: center; }
   .file-info.show { display: flex; }
   .fi-icon { font-size: 1.4rem; }
   .fi-name { font-size: 0.8rem; color: var(--text); font-weight: 500; }
   .fi-size { font-size: 0.7rem; color: var(--muted); }
-  .fi-clear {
-    margin-left: auto; background: none; border: none;
-    color: var(--muted); cursor: pointer; font-size: 1rem; padding: 4px;
-  }
+  .fi-clear { margin-left: auto; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 4px; }
   .fi-clear:hover { color: var(--danger); }
-
-  /* STATUS */
-  .status-bar {
-    display: none;
-    border-radius: 8px;
-    padding: 12px 16px;
-    font-size: 0.78rem;
-    margin-top: 14px;
-    gap: 8px;
-    align-items: flex-start;
-  }
+  .status-bar { display: none; border-radius: 8px; padding: 12px 16px; font-size: 0.78rem; margin-top: 14px; gap: 8px; align-items: flex-start; }
   .status-bar.show { display: flex; }
-  .status-bar.ok { background: #00d4aa15; border: 1px solid #00d4aa40; color: var(--accent); }
+  .status-bar.ok  { background: #00d4aa15; border: 1px solid #00d4aa40; color: var(--accent); }
   .status-bar.err { background: #ff454515; border: 1px solid #ff454540; color: var(--danger); }
   .status-bar.loading { background: #7b61ff15; border: 1px solid #7b61ff40; color: var(--accent2); }
-
-  /* CURRENT FILE INFO */
-  .current-info {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 16px;
-    margin-bottom: 24px;
-    font-size: 0.75rem;
-    color: var(--muted);
-  }
+  .current-info { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 24px; font-size: 0.75rem; color: var(--muted); }
   .current-info strong { color: var(--text); display: block; margin-bottom: 4px; font-size: 0.8rem; }
-  .current-info a { color: var(--accent); text-decoration: none; }
-  .current-info a:hover { text-decoration: underline; }
-
-  .divider {
-    border: none; border-top: 1px solid var(--border);
-    margin: 28px 0;
-  }
-
-  .nav-link {
-    display: block;
-    text-align: center;
-    color: var(--accent);
-    font-size: 0.75rem;
-    text-decoration: none;
-    letter-spacing: 0.08em;
-    margin-top: 20px;
-    opacity: 0.7;
-    transition: opacity 0.2s;
-  }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+  .nav-link { display: block; text-align: center; color: var(--accent); font-size: 0.75rem; text-decoration: none; letter-spacing: 0.08em; margin-top: 20px; opacity: 0.7; transition: opacity 0.2s; }
   .nav-link:hover { opacity: 1; }
-
-  /* SPINNER */
+  .progress-wrap { height: 3px; background: var(--border); border-radius: 2px; margin-top: 10px; overflow: hidden; display: none; }
+  .progress-wrap.show { display: block; }
+  .progress-bar { height: 100%; background: var(--accent2); border-radius: 2px; width: 0%; transition: width 0.3s ease; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .spin { display: inline-block; animation: spin 0.8s linear infinite; }
-
-  /* Progress bar */
-  .progress-wrap {
-    height: 3px; background: var(--border); border-radius: 2px;
-    margin-top: 10px; overflow: hidden; display: none;
-  }
-  .progress-wrap.show { display: block; }
-  .progress-bar {
-    height: 100%; background: var(--accent2);
-    border-radius: 2px; width: 0%;
-    transition: width 0.3s ease;
-  }
 </style>
 </head>
 <body>
-
 <div class="card">
+
   <!-- LOGIN -->
   <div id="login-section">
     <div class="logo">Dashboard Ventas</div>
@@ -261,9 +122,7 @@
     <div class="logo">Dashboard Ventas</div>
     <h1>Subir<br><span>Excel</span></h1>
 
-    <div class="current-info" id="current-info">
-      Verificando archivo actual…
-    </div>
+    <div class="current-info" id="current-info">Verificando archivo actual…</div>
 
     <div class="drop-zone" id="drop-zone">
       <input type="file" accept=".xlsx" id="file-input" onchange="onFileChosen(this)">
@@ -282,11 +141,7 @@
     </div>
 
     <button class="btn" id="upload-btn" onclick="doUpload()" disabled>Subir archivo</button>
-
-    <div class="progress-wrap" id="progress-wrap">
-      <div class="progress-bar" id="progress-bar"></div>
-    </div>
-
+    <div class="progress-wrap" id="progress-wrap"><div class="progress-bar" id="progress-bar"></div></div>
     <div class="status-bar" id="status-bar"></div>
 
     <hr class="divider">
@@ -298,7 +153,6 @@
   let selectedFile = null;
   let adminPassword = '';
 
-  // ── LOGIN ──────────────────────────────────────────────
   document.getElementById('pwd-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
   });
@@ -307,13 +161,11 @@
     const pwd = document.getElementById('pwd-input').value.trim();
     if (!pwd) return;
     adminPassword = pwd;
-    // We validate password on first real API call; for now just switch views
     document.getElementById('login-section').style.display = 'none';
     document.getElementById('app-section').style.display = 'block';
     loadCurrentInfo();
   }
 
-  // ── CURRENT FILE ──────────────────────────────────────
   async function loadCurrentInfo() {
     const el = document.getElementById('current-info');
     try {
@@ -323,25 +175,17 @@
         return;
       }
       const d = await r.json();
-      const date = new Date(d.uploadedAt).toLocaleString('es-AR');
       const kb = (d.size / 1024).toFixed(1);
-      el.innerHTML = `<strong>Archivo actual</strong>Subido el ${date} · ${kb} KB · <a href="${d.url}" target="_blank">Descargar</a>`;
+      el.innerHTML = `<strong>Archivo actual</strong>${kb} KB · <a href="${d.url}" target="_blank" style="color:var(--accent)">Descargar</a>`;
     } catch {
       el.innerHTML = '<strong>No se pudo verificar</strong>Error al conectar con el servidor.';
     }
   }
 
-  // ── FILE SELECTION ─────────────────────────────────────
-  function onFileChosen(inp) {
-    if (!inp.files[0]) return;
-    setFile(inp.files[0]);
-  }
+  function onFileChosen(inp) { if (inp.files[0]) setFile(inp.files[0]); }
 
   function setFile(file) {
-    if (!file.name.endsWith('.xlsx')) {
-      showStatus('err', '⚠️ Solo se aceptan archivos .xlsx');
-      return;
-    }
+    if (!file.name.endsWith('.xlsx')) { showStatus('err', '⚠️ Solo se aceptan archivos .xlsx'); return; }
     selectedFile = file;
     document.getElementById('fi-name').textContent = file.name;
     document.getElementById('fi-size').textContent = (file.size / 1024).toFixed(1) + ' KB';
@@ -360,82 +204,47 @@
     hideStatus();
   }
 
-  // Drag & drop
   const dz = document.getElementById('drop-zone');
   dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
   dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
-  dz.addEventListener('drop', e => {
-    e.preventDefault();
-    dz.classList.remove('drag');
-    const f = e.dataTransfer.files[0];
-    if (f) setFile(f);
-  });
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) setFile(f); });
 
-  // ── UPLOAD ─────────────────────────────────────────────
   async function doUpload() {
     if (!selectedFile) return;
     const btn = document.getElementById('upload-btn');
     btn.disabled = true;
     btn.textContent = '⏳ Subiendo…';
-    showStatus('loading', '<span class="spin">⟳</span> Subiendo archivo al servidor…');
+    showStatus('loading', '<span class="spin">⟳</span> Subiendo archivo…');
     showProgress(30);
 
     try {
       const resp = await fetch('/api/upload?pwd=' + encodeURIComponent(adminPassword), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
+        headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
         body: selectedFile,
       });
-
       showProgress(90);
       const data = await resp.json();
-
       if (!resp.ok) {
-        if (resp.status === 401) {
-          showStatus('err', '🔒 Contraseña incorrecta. Recargá la página e ingresá de nuevo.');
-        } else {
-          showStatus('err', '❌ Error: ' + (data.error || resp.statusText));
-        }
-        btn.disabled = false;
-        btn.textContent = 'Subir archivo';
-        hideProgress();
-        return;
+        showStatus('err', '❌ ' + (data.error || resp.statusText));
+        btn.disabled = false; btn.textContent = 'Subir archivo'; hideProgress(); return;
       }
-
       showProgress(100);
-      const date = new Date(data.uploadedAt).toLocaleString('es-AR');
-      showStatus('ok', `✅ Archivo subido exitosamente · ${date}`);
+      showStatus('ok', '✅ Archivo subido exitosamente');
       btn.textContent = '✓ Subido';
       clearFile();
       setTimeout(() => { btn.textContent = 'Subir archivo'; hideProgress(); }, 2000);
       loadCurrentInfo();
-
     } catch (err) {
       showStatus('err', '❌ Error de conexión: ' + err.message);
-      btn.disabled = false;
-      btn.textContent = 'Subir archivo';
-      hideProgress();
+      btn.disabled = false; btn.textContent = 'Subir archivo'; hideProgress();
     }
   }
 
-  function showStatus(type, msg) {
-    const el = document.getElementById('status-bar');
-    el.className = 'status-bar show ' + type;
-    el.innerHTML = msg;
-  }
-  function hideStatus() {
-    document.getElementById('status-bar').className = 'status-bar';
-  }
-  function showProgress(pct) {
-    document.getElementById('progress-wrap').classList.add('show');
-    document.getElementById('progress-bar').style.width = pct + '%';
-  }
-  function hideProgress() {
-    document.getElementById('progress-wrap').classList.remove('show');
-    document.getElementById('progress-bar').style.width = '0%';
-  }
+  function showStatus(type, msg) { const el = document.getElementById('status-bar'); el.className = 'status-bar show ' + type; el.innerHTML = msg; }
+  function hideStatus() { document.getElementById('status-bar').className = 'status-bar'; }
+  function showProgress(pct) { document.getElementById('progress-wrap').classList.add('show'); document.getElementById('progress-bar').style.width = pct + '%'; }
+  function hideProgress() { document.getElementById('progress-wrap').classList.remove('show'); document.getElementById('progress-bar').style.width = '0%'; }
 </script>
 </body>
 </html>
