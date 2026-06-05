@@ -143,13 +143,12 @@ tr.sup-group-sum td{
 <header>
   <div class="logo">DASH<span>VENTAS</span></div>
   <div class="hright">
-    <span class="finfo" id="finfo">Cargando...</span>
+    <span class="finfo" id="finfo">Sin archivo</span>
     <label class="ubtn" id="reloadbtn" style="display:none">
       ↺ Actualizar
       <input type="file" accept=".xlsx" onchange="loadFile(this)">
     </label>
     <button class="ubtn" id="exportbtn" style="display:none;background:#7b61ff" onclick="exportDashboard()">⬇ Exportar dashboard</button>
-    <a href="/admin.html" class="ubtn" style="text-decoration:none;background:#1e2330;color:#5a6072;font-size:0.65rem">⚙ Admin</a>
   </div>
 </header>
 
@@ -160,8 +159,6 @@ tr.sup-group-sum td{
   <div class="sp-sub" id="splash-msg">Cargando datos...</div>
   <div id="errmsg" style="display:none" class="errbx"></div>
 </div>
-
-<!-- LOADING -->
 <div id="loading">
   <div class="spin"></div>
   <div class="ldtxt" id="ldtxt">Procesando Excel...</div>
@@ -270,37 +267,6 @@ function normSup(raw) {
 }
 
 // ===== FILE LOAD =====
-// Auto-load from Vercel Blob on page start
-async function autoLoadFromServer() {
-  const splashMsg = document.getElementById('splash-msg');
-  if (splashMsg) splashMsg.textContent = 'Conectando con el servidor...';
-  try {
-    const r = await fetch('/api/data-url');
-    if (r.status === 404) {
-      showErr('No hay datos cargados. Pedile al administrador que suba el Excel.');
-      return;
-    }
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const info = await r.json();
-    if (splashMsg) splashMsg.textContent = 'Descargando datos...';
-    const fileResp = await fetch(info.url);
-    if (!fileResp.ok) throw new Error('No se pudo descargar el archivo');
-    const arrayBuffer = await fileResp.arrayBuffer();
-    document.getElementById('splash').style.display='none';
-    document.getElementById('loading').style.display='flex';
-    document.getElementById('ldtxt').textContent='Procesando datos...';
-    try {
-      const wb = XLSX.read(new Uint8Array(arrayBuffer), {type:'array'});
-      const uploadDate = new Date(info.uploadedAt).toLocaleDateString('es-AR');
-      parseWB(wb, 'ventas-data.xlsx');
-      document.getElementById('finfo').textContent = 'Actualizado ' + uploadDate;
-      document.getElementById('finfo').className = 'finfo ok';
-    } catch(err) { showErr('No se pudo leer el archivo: ' + err.message); }
-  } catch(err) {
-    showErr('Error al cargar datos: ' + err.message + '. Verificá la conexión.');
-  }
-}
-
 function loadFile(inp) {
   const file = inp.files[0];
   if (!file) return;
@@ -319,7 +285,198 @@ function startLoad(file) {
       document.getElementById('ldtxt').textContent='Procesando datos...';
       const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
       parseWB(wb, file.name);
-    } catch(err) { showErr('No se pudo leer el archivo: '+err.message); }// ===== NAV =====
+    } catch(err) { showErr('No se pudo leer el archivo: '+err.message); }
+  };
+  reader.onerror = () => showErr('Error al leer el archivo.');
+  reader.readAsArrayBuffer(file);
+}
+
+function parseWB(wb, fname) {
+  try {
+    if (!wb.SheetNames.includes('AVANCE')) throw new Error('No se encontró la hoja AVANCE.');
+
+    // ---- Detect format ----
+    const avWS = wb.Sheets['AVANCE'];
+    const avRaw = XLSX.utils.sheet_to_json(avWS, {header:1, defval:null});
+
+    // Find header row
+    let hIdx = avRaw.findIndex(r => r && r.some(c => String(c||'').toUpperCase().includes('OBJETIVO')));
+    if (hIdx === -1) throw new Error('No se encontró la fila de encabezados en AVANCE.');
+
+    const headers = avRaw[hIdx].map(h => String(h||'').trim().toUpperCase());
+    const ci = name => headers.findIndex(h => h.includes(name));
+
+    // Detect NEW format: has separate SUPERVISOR and VENDEDOR columns
+    const hasSupCol = ci('SUPERVISOR') > -1 && ci('VENDEDOR') > -1 && ci('SUPERVISOR') !== ci('VENDEDOR');
+    const newFormat = hasSupCol;
+
+    const iSup   = newFormat ? ci('SUPERVISOR') : -1;
+    const iVen   = newFormat ? ci('VENDEDOR') : ci('VENDEDOR/ SUPERVISOR') > -1 ? ci('VENDEDOR/ SUPERVISOR') : 0;
+    const iObj   = ci('OBJETIVO');
+    const iFact  = ci('FACTURACION ACUMULADA');
+    const iAv    = ci('AVANCE VS OBJETIVO');
+    const iCumpl = ci('CUMPLIMIENTO PROYECTADO');
+    const iMR    = ci('MEDIA REAL');
+    const iMN    = ci('MEDIA NECESARIA');
+    const iCobro = ci('COBRO');
+
+    A = [];
+    let lastSup = 'SIN SUPERVISOR';
+
+    for (let i = hIdx + 1; i < avRaw.length; i++) {
+      const row = avRaw[i];
+      if (!row) continue;
+
+      if (newFormat) {
+        // New format: SUPERVISOR col tells us when sup changes
+        const supRaw = row[iSup];
+        const supNorm = normSup(supRaw);
+        if (supNorm) lastSup = supNorm;
+
+        const venRaw = row[iVen];
+        if (isBlank(venRaw)) continue;
+        const venStr = String(venRaw).trim();
+
+        // Skip header-repeat row
+        if (venStr.toUpperCase().includes('VENDEDOR')) continue;
+
+        // Must match "N - NAME"
+        const m = venStr.match(/^(\d+)\s*-\s*(.+)/);
+        if (!m) continue;
+
+        const cod = m[1], shortName = m[2].trim();
+        const obj = n(row[iObj]);
+        if (!obj) continue;
+
+        const sup = NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : lastSup;
+
+        A.push({
+          nombre: shortName, codigo: cod, supervisor: sup,
+          objetivo: Math.round(obj),
+          facturacion: Math.round(n(row[iFact])),
+          avance_pct: parseFloat((n(row[iAv])*100).toFixed(1)),
+          cumplimiento: parseFloat((n(row[iCumpl])*100).toFixed(1)),
+          media_real: Math.round(n(row[iMR])),
+          media_nec: Math.round(n(row[iMN])),
+          cobro: Math.round(n(row[iCobro])),
+        });
+
+      } else {
+        // Old format: single VENDEDOR/SUPERVISOR column
+        const raw = row[iVen];
+        if (isBlank(raw)) continue;
+        const str = String(raw).trim();
+        if (str.toUpperCase().includes('VENDEDOR')) continue;
+        // Supervisor row? (no leading number)
+        const m = str.match(/^(\d+)\s*-\s*(.+)/);
+        if (!m) {
+          const supNorm = normSup(str);
+          if (supNorm) lastSup = supNorm;
+          continue;
+        }
+        const cod = m[1], shortName = m[2].trim();
+        const obj = n(row[iObj]);
+        if (!obj) continue;
+        const sup = NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : lastSup;
+        A.push({
+          nombre: shortName, codigo: cod, supervisor: sup,
+          objetivo: Math.round(obj),
+          facturacion: Math.round(n(row[iFact])),
+          avance_pct: parseFloat((n(row[iAv])*100).toFixed(1)),
+          cumplimiento: parseFloat((n(row[iCumpl])*100).toFixed(1)),
+          media_real: Math.round(n(row[iMR])),
+          media_nec: Math.round(n(row[iMN])),
+          cobro: Math.round(n(row[iCobro])),
+        });
+      }
+    }
+
+    if (A.length === 0) throw new Error('No se encontraron vendedores. Verificá que el archivo sea el reporte correcto de Chess.');
+
+    // ---- COBERTURA ----
+    COB = [];
+    if (wb.SheetNames.includes('COBERTURA')) {
+      const cobWS = wb.Sheets['COBERTURA'];
+      const cobRaw = XLSX.utils.sheet_to_json(cobWS, {header:1, defval:null});
+      let chIdx = cobRaw.findIndex(r => r && r.some(c => String(c||'').toUpperCase().includes('COBERTURA TOTAL')));
+      if (chIdx === -1) chIdx = 0;
+      const ch = cobRaw[chIdx].map(h => String(h||'').trim().toUpperCase());
+      const ciC = name => ch.findIndex(h => h.includes(name));
+
+      // Detect if COBERTURA also has separate SUPERVISOR column
+      const hasCobSup = ciC('SUPERVISOR') > -1 && ciC('VENDEDOR') > -1;
+      const iCSup  = hasCobSup ? ciC('SUPERVISOR') : -1;
+      const iCVen  = hasCobSup ? ciC('VENDEDOR') : ciC('VENDEDOR/ SUPERVISOR') > -1 ? ciC('VENDEDOR/ SUPERVISOR') : 1;
+      const iCOB   = ciC('COBERTURA TOTAL');
+      const iCCC   = ch.findIndex(h => h === 'CCC');
+      const iCAR   = ciC('CARTERA TOTAL');
+
+      let cobLastSup = 'SIN SUPERVISOR';
+      for (let i = chIdx + 1; i < cobRaw.length; i++) {
+        const row = cobRaw[i];
+        if (!row) continue;
+
+        // Track supervisor
+        if (iCSup > -1) {
+          const sr = row[iCSup];
+          if (!isBlank(sr)) {
+            const sn = normSup(sr);
+            if (sn) cobLastSup = sn;
+          }
+        }
+
+        const venRaw = row[iCVen];
+        if (isBlank(venRaw)) continue;
+        const venStr = String(venRaw).trim();
+        const m = venStr.match(/^(\d+)\s*-\s*(.+)/);
+        if (!m) {
+          // try to read supervisor name from vendor cell too (handles varied formats)
+          const sn = normSup(venStr);
+          if (sn) cobLastSup = sn;
+          continue;
+        }
+        const cod = m[1], shortName = m[2].trim();
+        const cobV = n(row[iCOB]);
+        const sup = NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : cobLastSup;
+        COB.push({
+          nombre: shortName, supervisor: sup,
+          cobertura: parseFloat((cobV * 100).toFixed(1)),
+          ccc: Math.round(n(row[iCCC])),
+          cartera: Math.round(n(row[iCAR])),
+        });
+      }
+    }
+
+    // ---- Update UI ----
+    const today = new Date();
+    document.getElementById('finfo').textContent = `✓ ${fname} · ${today.toLocaleDateString('es-AR')}`;
+    document.getElementById('finfo').className = 'finfo ok';
+    document.getElementById('reloadbtn').style.display = 'inline-flex';
+    document.getElementById('exportbtn').style.display = 'inline-flex';
+    cur = 'TODOS';
+    document.querySelectorAll('.sbtn').forEach(b => b.classList.remove('active'));
+    document.querySelector('[data-s="TODOS"]').classList.add('active');
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+    document.getElementById('pg-avance').classList.add('active');
+    document.querySelectorAll('.stab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.stab')[0].classList.add('active');
+    if (document.getElementById('sav')) document.getElementById('sav').value = '';
+    refresh();
+
+  } catch(err) { showErr(err.message); }
+}
+
+function showErr(msg) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('splash').style.display = 'flex';
+  const e = document.getElementById('errmsg');
+  e.innerHTML = '⚠️ ' + msg + '<br><small>Verificá que sea el reporte correcto exportado desde Chess ERP.</small>';
+  e.style.display = 'block';
+}
+
+// ===== NAV =====
 function setSup(s,btn){cur=s;document.querySelectorAll('.sbtn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');refresh();}
 function showSec(id,btn){document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.stab').forEach(t=>t.classList.remove('active'));document.getElementById('pg-'+id).classList.add('active');btn.classList.add('active');}
 
@@ -578,7 +735,26 @@ refresh();
 }
 
 // ===== INIT =====
-// Auto-load on page start
+async function autoLoadFromServer() {
+  try {
+    const r = await fetch('/api/data-url');
+    if (r.status === 404) { showErr('No hay datos cargados. Pedile al administrador que suba el Excel.'); return; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const info = await r.json();
+    const msg = document.getElementById('splash-msg');
+    if (msg) msg.textContent = 'Descargando datos...';
+    const fileResp = await fetch(info.url);
+    if (!fileResp.ok) throw new Error('No se pudo descargar el archivo');
+    const arrayBuffer = await fileResp.arrayBuffer();
+    document.getElementById('splash').style.display='none';
+    document.getElementById('loading').style.display='flex';
+    document.getElementById('ldtxt').textContent='Procesando datos...';
+    const wb = XLSX.read(new Uint8Array(arrayBuffer), {type:'array'});
+    parseWB(wb, 'ventas-data.xlsx');
+    document.getElementById('finfo').textContent = 'Actualizado ' + new Date(info.uploadedAt||Date.now()).toLocaleDateString('es-AR');
+  } catch(err) { showErr('Error al cargar datos: ' + err.message); }
+}
+
 autoLoadFromServer();
 </script>
 </body>
