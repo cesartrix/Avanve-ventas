@@ -190,7 +190,7 @@ tr.sup-group-sum td{
       <div class="panel">
         <div class="ptitle"><span class="dot p"></span>Tabla de avance</div>
         <div class="searchbar"><input id="sav" placeholder="🔍 Buscar vendedor..." oninput="renderAv()"></div>
-        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
+        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
         <div class="mc" id="mc-av"></div>
       </div>
     </div>
@@ -315,6 +315,7 @@ function parseWB(wb, fname) {
     const iObj   = ci('OBJETIVO');
     const iProyec = ci('PROYECCION');
     const iFact  = ci('FACTURACION ACUMULADA');
+    const iFactDia = ci('FACTURACION DEL DIA');
     const iAv    = ci('AVANCE VS OBJETIVO');
     const iCumpl = ci('CUMPLIMIENTO PROYECTADO');
     const iMR    = ci('MEDIA REAL');
@@ -355,6 +356,7 @@ function parseWB(wb, fname) {
           nombre: shortName, codigo: cod, supervisor: sup,
           objetivo: Math.round(obj),
           facturacion: Math.round(n(row[iFact])),
+          facturacion_dia: Math.round(n(row[iFactDia])),
           avance_pct: parseFloat((n(row[iAv])*100).toFixed(1)),
           proyeccion: iProyec>=0 ? n(row[iProyec]) : 0,
           cumplimiento: parseFloat((iProyec>=0 && iObj>=0 && n(row[iObj]) ? (n(row[iProyec])/n(row[iObj])*100) : n(row[iCumpl])*100).toFixed(1)),
@@ -384,6 +386,7 @@ function parseWB(wb, fname) {
           nombre: shortName, codigo: cod, supervisor: sup,
           objetivo: Math.round(obj),
           facturacion: Math.round(n(row[iFact])),
+          facturacion_dia: Math.round(n(row[iFactDia])),
           avance_pct: parseFloat((n(row[iAv])*100).toFixed(1)),
           proyeccion: iProyec>=0 ? n(row[iProyec]) : 0,
           cumplimiento: parseFloat((iProyec>=0 && iObj>=0 && n(row[iObj]) ? (n(row[iProyec])/n(row[iObj])*100) : n(row[iCumpl])*100).toFixed(1)),
@@ -514,7 +517,7 @@ function renderAv(){
     const col=sc(sup);
 
     // Group header row
-    rows+=`<tr class="sup-group-hdr"><td colspan="11" style="color:${col};border-bottom-color:${col}">
+    rows+=`<tr class="sup-group-hdr"><td colspan="12" style="color:${col};border-bottom-color:${col}">
       <span style="display:inline-flex;align-items:center;gap:8px;">
         <span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>
         ${sl(sup)}
@@ -537,6 +540,7 @@ function renderAv(){
         <td class="nc"><span style="font-family:'DM Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:5px">${x.codigo}</span>${x.nombre}</td>
         <td>${fmt(x.objetivo)}</td>
         <td>${fmt(x.facturacion)}</td>
+        <td>${x.facturacion_dia?fmt(x.facturacion_dia):'—'}</td>
         <td><div class="mbw"><div class="mbbg"><div class="mbf ${x.avance_pct<15?'d':''}" style="width:${Math.min(x.avance_pct*100/40,100)}%"></div></div><span class="${x.avance_pct>=20?'ph':x.avance_pct>=12?'pm':'pl'}">${x.avance_pct}%</span></div></td>
         <td class="${c>=100?'ph':c>=80?'pm':'pl'}" style="font-weight:700">${c}%</td>
         <td>${fmt(x.media_real)}</td>
@@ -565,6 +569,7 @@ function renderAv(){
       <td style="color:${col}">${group.length} vendedores</td>
       <td>${fmt(to)}</td>
       <td>${fmt(tf)}</td>
+      <td>${fmt(group.reduce((s,x)=>s+x.facturacion_dia,0))}</td>
       <td></td>
       <td style="color:${gc(+avgC)}">${avgC}%</td>
       <td colspan="2"></td>
@@ -635,7 +640,7 @@ ${document.querySelector('style').textContent}
     <div class="panel">
       <div class="ptitle"><span class="dot p"></span>Tabla de avance</div>
       <div class="searchbar"><input id="sav" placeholder="🔍 Buscar vendedor..." oninput="renderAv()"></div>
-      <div class="ts hm"><table><thead><tr><th>#</th><th>Pos.</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
+      <div class="ts hm"><table><thead><tr><th>#</th><th>Pos.</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
       <div class="mc" id="mc-av"></div>
     </div>
   </div>
@@ -704,7 +709,7 @@ function renderAv(){
     const group=base.filter(x=>x.supervisor===sup).sort((a,b)=>b.cumplimiento-a.cumplimiento);
     if(!group.length)return;
     const col=sc(sup);
-    rows+=\`<tr class="sup-group-hdr"><td colspan="11" style="color:\${col};border-bottom-color:\${col}"><span style="display:inline-flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:\${col};display:inline-block"></span>\${sl(sup)}<span style="font-family:'DM Mono',monospace;font-size:0.6rem;font-weight:400;color:var(--muted)">\${group.length} vendedores</span></span></td></tr>\`;
+    rows+=\`<tr class="sup-group-hdr"><td colspan="12" style="color:\${col};border-bottom-color:\${col}"><span style="display:inline-flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:\${col};display:inline-block"></span>\${sl(sup)}<span style="font-family:'DM Mono',monospace;font-size:0.6rem;font-weight:400;color:var(--muted)">\${group.length} vendedores</span></span></td></tr>\`;
     mcRows+=\`<div style="display:flex;align-items:center;gap:7px;padding:8px 0 4px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:\${col}"><span style="width:7px;height:7px;border-radius:50%;background:\${col};display:inline-block"></span>\${sl(sup)}</div>\`;
     group.forEach((x,i)=>{
       globalIdx++;
