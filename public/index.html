@@ -18,6 +18,11 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .hright{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
 .finfo{font-family:'DM Mono',monospace;font-size:0.62rem;color:var(--muted);white-space:nowrap;}
 .finfo.ok{color:var(--accent);}
+.dias-widget{display:none;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:5px 12px;font-family:'DM Mono',monospace;font-size:0.62rem;}
+.dias-item{display:flex;flex-direction:column;align-items:center;gap:1px;}
+.dias-num{font-size:0.9rem;font-weight:700;color:var(--accent);line-height:1;}
+.dias-lbl{font-size:0.52rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;}
+.dias-sep{width:1px;height:24px;background:var(--border);}
 .ubtn{display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#000;font-family:'Syne',sans-serif;font-size:0.72rem;font-weight:800;padding:7px 13px;border-radius:9px;cursor:pointer;border:none;white-space:nowrap;transition:background 0.2s;}
 .ubtn:hover{background:#00e8bb;}
 .ubtn input{display:none;}
@@ -143,6 +148,13 @@ tr.sup-group-sum td{
 <header>
   <div class="logo">DASH<span>VENTAS</span></div>
   <div class="hright">
+    <div class="dias-widget" id="dias-widget">
+      <div class="dias-item"><span class="dias-num" id="d-trab">—</span><span class="dias-lbl">Trabajados</span></div>
+      <div class="dias-sep"></div>
+      <div class="dias-item"><span class="dias-num" id="d-rest">—</span><span class="dias-lbl">Restantes</span></div>
+      <div class="dias-sep"></div>
+      <div class="dias-item"><span class="dias-num" id="d-mes">—</span><span class="dias-lbl">Del mes</span></div>
+    </div>
     <span class="finfo" id="finfo">Sin archivo</span>
     <label class="ubtn" id="reloadbtn" style="display:none">
       ↺ Actualizar
@@ -298,6 +310,19 @@ function parseWB(wb, fname) {
     // ---- Detect format ----
     const avWS = wb.Sheets['AVANCE'];
     const avRaw = XLSX.utils.sheet_to_json(avWS, {header:1, defval:null});
+    // Read M2:N4 - dias de trabajo (col 12=M, col 13=N, rows 1-3 = fila 2-4)
+    try {
+      const dRest  = avRaw[1] && avRaw[1][13]; // N2
+      const dTrab  = avRaw[2] && avRaw[2][13]; // N3
+      const dMes   = avRaw[3] && avRaw[3][13]; // N4
+      const w = document.getElementById('dias-widget');
+      if (w && (dRest||dTrab||dMes)) {
+        document.getElementById('d-rest').textContent = dRest ?? '—';
+        document.getElementById('d-trab').textContent = dTrab ?? '—';
+        document.getElementById('d-mes').textContent  = dMes  ?? '—';
+        w.style.display = 'flex';
+      }
+    } catch(_) {}
 
     // Find header row
     let hIdx = avRaw.findIndex(r => r && r.some(c => String(c||'').toUpperCase().includes('OBJETIVO')));
