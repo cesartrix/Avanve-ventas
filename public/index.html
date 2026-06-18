@@ -110,6 +110,24 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'DM Mono',monospace;font
   .mcr span:last-child{font-family:'DM Mono',monospace;}
 }
 .sr{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);align-items:center;font-size:0.75rem;}
+.hst-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:16px;}
+@media(max-width:700px){.hst-grid{grid-template-columns:1fr;}}
+.hst-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;}
+.hst-title{font-family:'Syne',sans-serif;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:14px;}
+.hst-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:0.68rem;}
+.hst-bar-label{width:55px;color:var(--muted);text-align:right;flex-shrink:0;font-family:'DM Mono',monospace;}
+.hst-bar-wrap{flex:1;height:14px;background:var(--bg);border-radius:4px;overflow:hidden;}
+.hst-bar-fill{height:100%;border-radius:4px;transition:width 0.6s ease;}
+.hst-bar-val{width:42px;color:var(--text);font-family:'DM Mono',monospace;flex-shrink:0;}
+.hst-tbl{width:100%;border-collapse:collapse;font-size:0.7rem;}
+.hst-tbl th{color:var(--muted);text-align:left;padding:5px 6px;border-bottom:1px solid var(--border);font-weight:500;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;}
+.hst-tbl td{padding:5px 6px;border-bottom:1px solid var(--border);font-family:'DM Mono',monospace;}
+.hst-tbl tr:last-child td{border-bottom:none;}
+.hst-tbl .rank{color:var(--muted);width:24px;}
+.hst-month-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+.hst-mtab{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.65rem;cursor:pointer;transition:all 0.15s;}
+.hst-mtab.active{background:var(--accent);color:#0a0b0f;border-color:var(--accent);font-weight:700;}
+.hst-full{grid-column:1/-1;}
 .sr:last-child{border-bottom:none;}
 .sn{font-weight:600;} .sv{font-family:'DM Mono',monospace;color:var(--accent);}
 .sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px;margin-bottom:12px;}
@@ -189,6 +207,7 @@ tr.sup-group-sum td{
   <div class="stabs">
     <button class="stab active" onclick="showSec('avance',this)">📈 Avance</button>
     <button class="stab" onclick="showSec('cobertura',this)">🗂 Cobertura</button>
+    <button class="stab" onclick="showSec('historico',this)">📅 Histórico</button>
     <button class="stab" onclick="showSec('ranking',this)">🏆 Ranking</button>
     <button class="stab" onclick="showSec('resumen',this)">📊 Supervisores</button>
   </div>
@@ -480,6 +499,51 @@ function parseWB(wb, fname) {
 
     // ---- Update UI ----
     const today = new Date();
+    // ===== PARSE HISTORICO =====
+    window.HIST = [];
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    for (const sname of wb.SheetNames) {
+      const lower = sname.toLowerCase();
+      if (!lower.startsWith('historico')) continue;
+      const mes = sname.replace(/historico /i,'').trim();
+      const hWS = wb.Sheets[sname];
+      const hRaw = XLSX.utils.sheet_to_json(hWS, {header:1, defval:null});
+      if (!hRaw.length) continue;
+      const hHead = hRaw[0].map(h => String(h||'').trim().toUpperCase());
+      const hasSup = hHead[0].toUpperCase().includes('SUPERVISOR');
+      const iVen  = hasSup ? 1 : 0;
+      const iObj2 = hasSup ? 2 : 1;
+      const iFac2 = hasSup ? 3 : 2;
+      const iProy = hasSup ? 7 : 7;
+      const nn = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
+      let lastSup = '';
+      const vendedores = [];
+      for (let i=1; i<hRaw.length; i++) {
+        const r = hRaw[i];
+        if (!r || !r[iVen]) continue;
+        const venStr = String(r[iVen]||'').trim();
+        if (hasSup && r[0]) lastSup = String(r[0]).trim();
+        if (!venStr.match(/^\d+\s*-/)) continue;
+        const m = venStr.match(/^(\d+)\s*-\s*(.+)/);
+        if (!m) continue;
+        const obj = nn(r[iObj2]), fac = nn(r[iFac2]), proy = nn(r[iProy]);
+        vendedores.push({
+          codigo: m[1], nombre: m[2].trim(),
+          supervisor: lastSup || 'SIN SUPERVISOR',
+          objetivo: obj, facturacion: fac,
+          proyeccion: proy,
+          cumplimiento: obj > 0 ? proy/obj*100 : 0,
+        });
+      }
+      if (vendedores.length) window.HIST.push({ mes, vendedores });
+    }
+    window.HIST.sort((a,b) => {
+      const ai = meses.findIndex(m => a.mes.toLowerCase().includes(m.toLowerCase()));
+      const bi = meses.findIndex(m => b.mes.toLowerCase().includes(m.toLowerCase()));
+      return ai - bi;
+    });
+    buildHistorico();
+
     document.getElementById('finfo').textContent = `✓ ${fname} · ${today.toLocaleDateString('es-AR')}`;
     document.getElementById('finfo').className = 'finfo ok';
     document.getElementById('reloadbtn').style.display = 'inline-flex';
@@ -766,6 +830,98 @@ refresh();
   a.click();
   URL.revokeObjectURL(url);
   } catch(err) { console.error('Export error:', err); alert('Error al exportar: ' + err.message); }
+}
+
+// ===== HISTORICO =====
+function buildHistorico() {
+  if (!window.HIST || !window.HIST.length) return;
+  const tabsEl = document.getElementById('hst-month-tabs');
+  const gridEl = document.getElementById('hst-grid');
+  if (!tabsEl || !gridEl) return;
+
+  // Build month tabs
+  tabsEl.innerHTML = window.HIST.map((h,i) =>
+    `<button class="hst-mtab${i===window.HIST.length-1?' active':''}" onclick="renderHist(${i},this)">${h.mes}</button>`
+  ).join('');
+
+  renderHist(window.HIST.length - 1, tabsEl.lastElementChild);
+}
+
+function renderHist(idx, btn) {
+  document.querySelectorAll('.hst-mtab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const h = window.HIST[idx];
+  if (!h) return;
+  const gridEl = document.getElementById('hst-grid');
+  const vens = h.vendedores;
+  const totalObj = vens.reduce((s,x)=>s+x.objetivo,0);
+  const totalFac = vens.reduce((s,x)=>s+x.facturacion,0);
+  const totalProy = vens.reduce((s,x)=>s+x.proyeccion,0);
+  const cumplGen = totalObj > 0 ? (totalProy/totalObj*100).toFixed(1) : '—';
+  const fmtM = v => v>=1e9?(v/1e9).toFixed(2)+'B':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v.toFixed(0);
+  const gc = v => v>=100?'var(--accent)':v>=80?'var(--warn)':'var(--danger)';
+
+  // Group by supervisor
+  const sups = {};
+  vens.forEach(x => {
+    if (!sups[x.supervisor]) sups[x.supervisor] = [];
+    sups[x.supervisor].push(x);
+  });
+
+  // Supervisor summary bars
+  const supNames = Object.keys(sups).filter(s=>s!=='SIN SUPERVISOR');
+  const supBars = supNames.map(s => {
+    const g = sups[s];
+    const gObj = g.reduce((a,x)=>a+x.objetivo,0);
+    const gProy = g.reduce((a,x)=>a+x.proyeccion,0);
+    const cumpl = gObj>0?(gProy/gObj*100).toFixed(1):0;
+    return {sup:s, cumpl:+cumpl};
+  }).sort((a,b)=>b.cumpl-a.cumpl);
+  const maxCumpl = Math.max(...supBars.map(x=>x.cumpl), 100);
+
+  // Ranking vendedores
+  const ranked = [...vens].filter(x=>x.supervisor!=='SIN SUPERVISOR').sort((a,b)=>b.cumplimiento-a.cumplimiento);
+
+  gridEl.innerHTML = `
+    <div class="hst-card">
+      <div class="hst-title">📊 Resumen ${h.mes}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div style="text-align:center">
+          <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;color:var(--accent)">${fmtM(totalFac)}</div>
+          <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Facturado</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;color:var(--text)">${fmtM(totalObj)}</div>
+          <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Objetivo</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;color:${gc(+cumplGen)}">${cumplGen}%</div>
+          <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Cumpl. Proy.</div>
+        </div>
+      </div>
+      <div class="hst-title">Por supervisor</div>
+      ${supBars.map(s=>`
+        <div class="hst-bar-row">
+          <div class="hst-bar-label">${s.sup.split(' ')[0]}</div>
+          <div class="hst-bar-wrap"><div class="hst-bar-fill" style="width:${Math.min(s.cumpl/maxCumpl*100,100)}%;background:${gc(s.cumpl)}"></div></div>
+          <div class="hst-bar-val" style="color:${gc(s.cumpl)}">${s.cumpl}%</div>
+        </div>`).join('')}
+    </div>
+    <div class="hst-card">
+      <div class="hst-title">🏆 Ranking vendedores</div>
+      <table class="hst-tbl">
+        <thead><tr><th class="rank">#</th><th>Vendedor</th><th>Facturado</th><th>Cumpl.</th></tr></thead>
+        <tbody>
+          ${ranked.slice(0,15).map((x,i)=>`
+            <tr>
+              <td class="rank">${i+1}</td>
+              <td style="color:var(--text)">${x.nombre}</td>
+              <td>${fmtM(x.facturacion)}</td>
+              <td style="color:${gc(x.cumplimiento)};font-weight:700">${x.cumplimiento.toFixed(1)}%</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 // ===== INIT =====
