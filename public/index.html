@@ -541,8 +541,11 @@ function parseWB(wb, fname) {
         if (!r) continue;
         const venStr = String(r[iVen]||'').trim();
         if (hasSup && r[0]) lastSup = String(r[0]).trim();
-        // skip supervisor subtotal rows (no vendor code)
-        if (!venStr.match(/^\d+\s*-/)) continue;
+        // detect supervisor label rows (e.g. "MARTIN PREVENTA (SUPERVISOR)" or "LOPEZ ENZO")
+        if (!venStr.match(/^\d+\s*-/)) {
+          if (!hasSup && venStr.length > 0) lastSup = venStr.replace(/\s*\(SUPERVISOR\)/i,'').trim();
+          continue;
+        }
         const m = venStr.match(/^(\d+)\s*-\s*(.+)/);
         if (!m) continue;
         const obj = nn(r[iObj2]), fac = nn(r[iFac2]), proy = nn(r[iProy]);
@@ -901,7 +904,7 @@ function renderHist(idx, btn) {
   const maxCumpl = Math.max(...supBars.map(x=>x.cumpl), 100);
 
   // Ranking vendedores
-  const ranked = [...vens].filter(x=>x.supervisor!=='SIN SUPERVISOR').sort((a,b)=>b.cumplimiento-a.cumplimiento);
+  const ranked = [...vens].sort((a,b)=>b.cumplimiento-a.cumplimiento);
 
   gridEl.innerHTML = `
     <div class="hst-card">
