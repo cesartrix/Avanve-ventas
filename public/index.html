@@ -941,7 +941,7 @@ function renderHist(idx, btn) {
             const gProy = g.reduce((a,x)=>a+x.proyeccion,0);
             const gCumpl = gObj>0?(gProy/gObj*100).toFixed(1):0;
             return '<tr style="background:var(--border)"><td colspan="3" style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">'+s+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td></tr>'
-              + g.map(x=>'<tr><td style="color:var(--text);padding-left:10px">'+x.nombre+'</td><td>'+fmtM(x.objetivo)+'</td><td>'+fmtM(x.facturacion)+'</td><td style="color:'+gc(x.cumplimiento)+';font-weight:700">'+x.cumplimiento.toFixed(1)+'%</td></tr>').join('');
+              + g.map(x=>'<tr><td style="color:var(--text);padding-left:10px"><span style=\'color:var(--muted);font-size:0.62rem;margin-right:4px\'>'+x.codigo+'</span>'+x.nombre+'</td><td>'+fmtM(x.objetivo)+'</td><td>'+fmtM(x.facturacion)+'</td><td style="color:'+gc(x.cumplimiento)+';font-weight:700">'+x.cumplimiento.toFixed(1)+'%</td></tr>').join('');
           }).join('')}
         </tbody>
       </table>
