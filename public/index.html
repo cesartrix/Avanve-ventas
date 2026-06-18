@@ -526,23 +526,27 @@ function parseWB(wb, fname) {
       const hRaw = XLSX.utils.sheet_to_json(hWS, {header:1, defval:null});
       if (!hRaw.length) continue;
       const hHead = hRaw[0].map(h => String(h||'').trim().toUpperCase());
-      const hasSup = hHead[0].toUpperCase().includes('SUPERVISOR');
+      // hasSup: col[0]='SUPERVISOR' y col[1]='VENDEDOR' (formato Mayo+)
+      // !hasSup: col[0]='VENDEDOR/ SUPERVISOR' y vendedor directo en col[0]
+      const hasSup = hHead[0] === 'SUPERVISOR' && hHead[1] === 'VENDEDOR';
       const iVen  = hasSup ? 1 : 0;
       const iObj2 = hasSup ? 2 : 1;
       const iFac2 = hasSup ? 3 : 2;
-      const iProy = hasSup ? 7 : 7;
+      const iProy = hasSup ? 7 : 6;
       const nn = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
       let lastSup = '';
       const vendedores = [];
       for (let i=1; i<hRaw.length; i++) {
         const r = hRaw[i];
-        if (!r || !r[iVen]) continue;
+        if (!r) continue;
         const venStr = String(r[iVen]||'').trim();
         if (hasSup && r[0]) lastSup = String(r[0]).trim();
+        // skip supervisor subtotal rows (no vendor code)
         if (!venStr.match(/^\d+\s*-/)) continue;
         const m = venStr.match(/^(\d+)\s*-\s*(.+)/);
         if (!m) continue;
         const obj = nn(r[iObj2]), fac = nn(r[iFac2]), proy = nn(r[iProy]);
+        if (obj === 0 && fac === 0) continue;
         vendedores.push({
           codigo: m[1], nombre: m[2].trim(),
           supervisor: lastSup || 'SIN SUPERVISOR',
