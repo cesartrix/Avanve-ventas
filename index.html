@@ -931,18 +931,18 @@ function renderHist(idx, btn) {
           <div class="hst-bar-val" style="color:${gc(s.cumpl)}">${s.cumpl}%</div>
         </div>`).join('')}
     </div>
-    <div class="hst-card">
-      <div class="hst-title">🏆 Ranking vendedores</div>
+    <div class="hst-card"hst-title">👥 Vendedores por supervisor</div>
       <table class="hst-tbl">
-        <thead><tr><th class="rank">#</th><th>Vendedor</th><th>Facturado</th><th>Cumpl.</th></tr></thead>
+        <thead><tr><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Cumpl.</th></tr></thead>
         <tbody>
-          ${ranked.slice(0,15).map((x,i)=>`
-            <tr>
-              <td class="rank">${i+1}</td>
-              <td style="color:var(--text)">${x.nombre}</td>
-              <td>${fmtM(x.facturacion)}</td>
-              <td style="color:${gc(x.cumplimiento)};font-weight:700">${x.cumplimiento.toFixed(1)}%</td>
-            </tr>`).join('')}
+          ${Object.keys(sups).filter(s=>s!=='SIN SUPERVISOR').map(s => {
+            const g = sups[s].sort((a,b)=>b.cumplimiento-a.cumplimiento);
+            const gObj = g.reduce((a,x)=>a+x.objetivo,0);
+            const gProy = g.reduce((a,x)=>a+x.proyeccion,0);
+            const gCumpl = gObj>0?(gProy/gObj*100).toFixed(1):0;
+            return '<tr style="background:var(--border)"><td colspan="3" style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">'+s+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td></tr>'
+              + g.map(x=>'<tr><td style="color:var(--text);padding-left:10px">'+x.nombre+'</td><td>'+fmtM(x.objetivo)+'</td><td>'+fmtM(x.facturacion)+'</td><td style="color:'+gc(x.cumplimiento)+';font-weight:700">'+x.cumplimiento.toFixed(1)+'%</td></tr>').join('');
+          }).join('')}
         </tbody>
       </table>
     </div>`;
