@@ -225,7 +225,23 @@ tr.sup-group-sum td{
         <div class="mc" id="mc-av"></div>
       </div>
     </div>
-    <div class="pg" id="pg-cobertura">
+    <div class="pg" id="pg-historico">
+        <div style="padding:14px 0 6px">
+          <div class="hst-month-tabs" id="hst-month-tabs"></div>
+          <div class="hst-grid" id="hst-grid">
+            <div class="hst-card hst-full" style="text-align:center;color:var(--muted);padding:40px">Cargando histórico...</div>
+          </div>
+        </div>
+      </div>
+    <div class="pg" id="pg-historico">
+      <div style="padding:14px 0 6px">
+        <div class="hst-month-tabs" id="hst-month-tabs"></div>
+        <div class="hst-grid" id="hst-grid">
+          <div class="hst-card hst-full" style="text-align:center;color:var(--muted);padding:40px">Cargando histórico...</div>
+          </div>
+        </div>
+      </div>
+  <div class="pg" id="pg-cobertura">
       <div class="kstrip" id="kpi-cob"></div>
       <div class="g2">
         <div class="panel"><div class="ptitle"><span class="dot"></span>Cobertura %</div><canvas id="ccob"></canvas></div>
@@ -717,6 +733,7 @@ ${document.querySelector('style').textContent}
 <div class="stabs">
   <button class="stab active" onclick="showSec('avance',this)">📈 Avance</button>
   <button class="stab" onclick="showSec('cobertura',this)">🗂 Cobertura</button>
+  <button class="stab" onclick="showSec('historico',this)">📅 Histórico</button>
   <button class="stab" onclick="showSec('ranking',this)">🏆 Ranking</button>
   <button class="stab" onclick="showSec('resumen',this)">📊 Supervisores</button>
 </div>
