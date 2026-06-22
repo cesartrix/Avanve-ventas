@@ -129,6 +129,11 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'DM Mono',monospace;font
 .hst-mtab.active{background:var(--accent);color:#0a0b0f;border-color:var(--accent);font-weight:700;}
 .hst-full{grid-column:1/-1;}
 .hst-vendor-row{cursor:pointer;transition:background 0.15s;}
+#s-horas{margin-top:16px;}
+.horas-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;}
+.horas-title{font-family:'Syne',sans-serif;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:4px;}
+.horas-sub{font-size:0.68rem;color:var(--muted);margin-bottom:14px;}
+.horas-chart-wrap{position:relative;}
 .hst-vendor-row:hover{background:var(--bg);}
 .hst-chart-modal{display:none;position:fixed;inset:0;background:#000000cc;z-index:1000;align-items:center;justify-content:center;padding:20px;}
 .hst-chart-modal.show{display:flex;}
@@ -231,6 +236,7 @@ tr.sup-group-sum td{
     <button class="stab active" onclick="showSec('avance',this)">📈 Avance</button>
     <button class="stab" onclick="showSec('cobertura',this)">🗂 Cobertura</button>
     <button class="stab" onclick="showSec('historico',this)">📅 Histórico</button>
+    <button class="stab" onclick="showSec('horas',this)">⏱ Horas</button>
     <button class="stab" onclick="showSec('ranking',this)">🏆 Ranking</button>
     <button class="stab" onclick="showSec('resumen',this)">📊 Supervisores</button>
   </div>
@@ -248,6 +254,15 @@ tr.sup-group-sum td{
         <div class="mc" id="mc-av"></div>
       </div>
     </div>
+    <div class="pg" id="pg-horas">
+      <div id="s-horas" style="margin-top:16px">
+        <div class="horas-wrap">
+          <div class="horas-title">⏱ Promedio de horas en ruta</div>
+          <div class="horas-sub">Objetivo: 6 horas · Verde ≥6h · Amarillo ≥5h · Rojo &lt;5h</div>
+          <div class="horas-chart-wrap"><canvas id="horas-chart"></canvas></div>
+        </div>
+      </div>
+    </div>
     <div class="pg" id="pg-historico">
         <div style="padding:14px 0 6px">
           <div class="hst-month-tabs" id="hst-month-tabs"></div>
@@ -256,7 +271,16 @@ tr.sup-group-sum td{
           </div>
         </div>
       </div>
-    <div class="pg" id="pg-historico">
+    <div class="pg" id="pg-horas">
+    <div id="s-horas" style="margin-top:16px">
+      <div class="horas-wrap">
+        <div class="horas-title">⏱ Promedio de horas en ruta</div>
+        <div class="horas-sub">Objetivo: 6 horas · Verde ≥6h · Amarillo ≥5h · Rojo &lt;5h</div>
+        <div class="horas-chart-wrap"><canvas id="horas-chart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  <div class="pg" id="pg-historico">
       <div style="padding:14px 0 6px">
         <div class="hst-month-tabs" id="hst-month-tabs"></div>
         <div class="hst-grid" id="hst-grid">
@@ -590,6 +614,29 @@ function parseWB(wb, fname) {
     });
     buildHistorico();
 
+    // ===== PARSE PROMEDIO HORAS =====
+    window.HORAS = [];
+    const horasWS = wb.Sheets['Promedio Horas'];
+    if (horasWS) {
+      const horasRaw = XLSX.utils.sheet_to_json(horasWS, {header:1, defval:null});
+      for (let i=1; i<horasRaw.length; i++) {
+        const r = horasRaw[i];
+        if (!r || !r[1] || !r[3]) continue;
+        // col D is time stored as Excel fraction (seconds/86400) or JS Date object
+        let hDecimal = 0;
+        const val = r[3];
+        if (typeof val === 'number') {
+          hDecimal = val * 24; // Excel time fraction → hours
+        } else if (val instanceof Date) {
+          hDecimal = val.getHours() + val.getMinutes()/60 + val.getSeconds()/3600;
+        }
+        if (hDecimal <= 0) continue;
+        window.HORAS.push({ cod: String(r[0]||''), nombre: String(r[1]).trim(), horas: +hDecimal.toFixed(3) });
+      }
+      window.HORAS.sort((a,b) => b.horas - a.horas);
+      buildHorasChart();
+    }
+
     document.getElementById('finfo').textContent = `✓ ${fname} · ${today.toLocaleDateString('es-AR')}`;
     document.getElementById('finfo').className = 'finfo ok';
     document.getElementById('reloadbtn').style.display = 'inline-flex';
@@ -767,6 +814,7 @@ ${document.querySelector('style').textContent}
   <button class="stab active" onclick="showSec('avance',this)">📈 Avance</button>
   <button class="stab" onclick="showSec('cobertura',this)">🗂 Cobertura</button>
   <button class="stab" onclick="showSec('historico',this)">📅 Histórico</button>
+  <button class="stab" onclick="showSec('horas',this)">⏱ Horas</button>
   <button class="stab" onclick="showSec('ranking',this)">🏆 Ranking</button>
   <button class="stab" onclick="showSec('resumen',this)">📊 Supervisores</button>
 </div>
@@ -979,6 +1027,94 @@ function renderHist(idx, btn) {
       showVendorChart(row.dataset.cod, row.dataset.nom);
     });
   });
+}
+
+// ===== HORAS CHART =====
+let horasChartInstance = null;
+function buildHorasChart() {
+  if (!window.HORAS || !window.HORAS.length) return;
+  const ctx = document.getElementById('horas-chart');
+  if (!ctx) return;
+  if (horasChartInstance) horasChartInstance.destroy();
+
+  const labels = window.HORAS.map(x => x.nombre);
+  const data   = window.HORAS.map(x => +x.horas.toFixed(2));
+  const OBJETIVO = 6;
+
+  const colors = data.map(v => v >= OBJETIVO ? '#00d4aa' : v >= 5 ? '#ffcc00' : '#ff4545');
+
+  horasChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Horas promedio',
+        data,
+        backgroundColor: colors,
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#12141a',
+          borderColor: '#1e2130',
+          borderWidth: 1,
+          titleColor: '#e8eaf0',
+          bodyColor: '#e8eaf0',
+          padding: 10,
+          callbacks: {
+            label: ctx => {
+              const h = Math.floor(ctx.parsed.x);
+              const m = Math.round((ctx.parsed.x - h) * 60);
+              return ` ${h}h ${m.toString().padStart(2,'0')}m`;
+            }
+          }
+        },
+        annotation: {
+          annotations: {
+            objetivo: {
+              type: 'line',
+              xMin: OBJETIVO, xMax: OBJETIVO,
+              borderColor: '#ffffff55',
+              borderWidth: 2,
+              borderDash: [6,4],
+              label: {
+                display: true,
+                content: 'Objetivo 6h',
+                color: '#ffffff99',
+                font: { size: 10 },
+                position: 'start',
+                backgroundColor: 'transparent',
+              }
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          min: 0, max: 8,
+          ticks: {
+            color: '#5a6072',
+            callback: v => v + 'h',
+            stepSize: 1
+          },
+          grid: { color: '#1e2130' },
+        },
+        y: {
+          ticks: { color: '#e8eaf0', font: { size: 11 } },
+          grid: { display: false },
+        }
+      }
+    }
+  });
+  // Fix canvas height after data loaded
+  ctx.style.height = (window.HORAS.length * 22 + 40) + 'px';
 }
 
 // ===== HISTORICO: VENDOR CHART =====
