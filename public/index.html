@@ -1063,7 +1063,7 @@ function buildHorasChart() {
     if (!ctx) return;
     if (horasChartInstances[sup]) horasChartInstances[sup].destroy();
 
-    const labels = group.map(x => x.cod+' - '+x.nombre);
+    const labels = group.map(x => x.cod);
     const data   = group.map(x => +x.horas.toFixed(2));
     const colors = data.map(v => gc2(v));
 
@@ -1107,7 +1107,7 @@ function buildHorasChart() {
             padding: 10,
             filter: item => item.datasetIndex === 0,
             callbacks: {
-              title: items => group[items[0].dataIndex].nombre,
+              title: items => { const v=group[items[0].dataIndex]; return v.cod+' - '+v.nombre; },
               label: item => {
                 const h = Math.floor(item.parsed.y);
                 const m = Math.round((item.parsed.y - h) * 60);
