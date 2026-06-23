@@ -129,6 +129,11 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'DM Mono',monospace;font
 .hst-mtab.active{background:var(--accent);color:#0a0b0f;border-color:var(--accent);font-weight:700;}
 .hst-full{grid-column:1/-1;}
 .hst-vendor-row{cursor:pointer;transition:background 0.15s;}
+.horas-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:16px;}
+.horas-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 16px;}
+.horas-card-title{font-family:'Syne',sans-serif;font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;}
+.horas-card-sub{font-size:0.65rem;color:var(--muted);margin-bottom:12px;}
+.horas-chart-wrap{position:relative;height:220px;}
 .hst-vendor-row:hover{background:var(--bg);}
 .hst-chart-modal{display:none;position:fixed;inset:0;background:#000000cc;z-index:1000;align-items:center;justify-content:center;padding:20px;}
 .hst-chart-modal.show{display:flex;}
@@ -231,6 +236,7 @@ tr.sup-group-sum td{
     <button class="stab active" onclick="showSec('avance',this)">📈 Avance</button>
     <button class="stab" onclick="showSec('cobertura',this)">🗂 Cobertura</button>
     <button class="stab" onclick="showSec('historico',this)">📅 Histórico</button>
+    <button class="stab" onclick="showSec('horas',this)">⏱ Horas</button>
     <button class="stab" onclick="showSec('ranking',this)">🏆 Ranking</button>
     <button class="stab" onclick="showSec('resumen',this)">📊 Supervisores</button>
   </div>
@@ -248,6 +254,11 @@ tr.sup-group-sum td{
         <div class="mc" id="mc-av"></div>
       </div>
     </div>
+    <div class="pg" id="pg-horas">
+      <div class="horas-grid" id="horas-grid">
+        <div style="color:var(--muted);padding:40px;text-align:center">Cargando...</div>
+      </div>
+    </div>
     <div class="pg" id="pg-historico">
         <div style="padding:14px 0 6px">
           <div class="hst-month-tabs" id="hst-month-tabs"></div>
@@ -256,7 +267,12 @@ tr.sup-group-sum td{
           </div>
         </div>
       </div>
-    <div class="pg" id="pg-historico">
+    <div class="pg" id="pg-horas">
+    <div class="horas-grid" id="horas-grid">
+      <div style="color:var(--muted);padding:40px;text-align:center">Cargando...</div>
+      </div>
+    </div>
+  <div class="pg" id="pg-historico">
       <div style="padding:14px 0 6px">
         <div class="hst-month-tabs" id="hst-month-tabs"></div>
         <div class="hst-grid" id="hst-grid">
@@ -590,6 +606,37 @@ function parseWB(wb, fname) {
     });
     buildHistorico();
 
+    // ===== PARSE PROMEDIO HORAS =====
+    window.HORAS = [];
+    const horasWS = wb.Sheets['Promedio Horas'];
+    if (horasWS) {
+      // vendor -> supervisor map from parsed avance data
+      const supMap = {};
+      A.forEach(x => { supMap[x.codigo] = x.supervisor; });
+
+      const horasRaw = XLSX.utils.sheet_to_json(horasWS, {header:1, defval:null});
+      for (let i=1; i<horasRaw.length; i++) {
+        const r = horasRaw[i];
+        if (!r || !r[1] || !r[3]) continue;
+        let hDecimal = 0;
+        const val = r[3];
+        if (typeof val === 'number') {
+          hDecimal = val * 24; // Excel fraction
+        } else if (val instanceof Date) {
+          hDecimal = val.getHours() + val.getMinutes()/60 + val.getSeconds()/3600;
+        }
+        if (hDecimal <= 0) continue;
+        const cod = String(r[0]||'').replace(/^V/i,'').trim();
+        window.HORAS.push({
+          cod,
+          nombre: String(r[1]).trim(),
+          horas: +hDecimal.toFixed(3),
+          supervisor: supMap[cod] || 'SIN SUPERVISOR'
+        });
+      }
+      buildHorasChart();
+    }
+
     document.getElementById('finfo').textContent = `✓ ${fname} · ${today.toLocaleDateString('es-AR')}`;
     document.getElementById('finfo').className = 'finfo ok';
     document.getElementById('reloadbtn').style.display = 'inline-flex';
@@ -767,6 +814,7 @@ ${document.querySelector('style').textContent}
   <button class="stab active" onclick="showSec('avance',this)">📈 Avance</button>
   <button class="stab" onclick="showSec('cobertura',this)">🗂 Cobertura</button>
   <button class="stab" onclick="showSec('historico',this)">📅 Histórico</button>
+  <button class="stab" onclick="showSec('horas',this)">⏱ Horas</button>
   <button class="stab" onclick="showSec('ranking',this)">🏆 Ranking</button>
   <button class="stab" onclick="showSec('resumen',this)">📊 Supervisores</button>
 </div>
@@ -977,6 +1025,109 @@ function renderHist(idx, btn) {
   gridEl.querySelectorAll('.hst-vendor-row').forEach(row => {
     row.addEventListener('click', () => {
       showVendorChart(row.dataset.cod, row.dataset.nom);
+    });
+  });
+}
+
+// ===== HORAS CHART =====
+const horasChartInstances = {};
+function buildHorasChart() {
+  if (!window.HORAS || !window.HORAS.length) return;
+  const grid = document.getElementById('horas-grid');
+  if (!grid) return;
+
+  const OBJETIVO = 6;
+  const SUP_COLORS = {'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','GONZALO':'#ffcc00'};
+  const gc2 = v => v >= OBJETIVO ? '#00d4aa' : v >= 5 ? '#ffcc00' : '#ff4545';
+
+  // Group by supervisor
+  const sups = {};
+  window.HORAS.forEach(x => {
+    if (x.supervisor === 'SIN SUPERVISOR') return;
+    if (!sups[x.supervisor]) sups[x.supervisor] = [];
+    sups[x.supervisor].push(x);
+  });
+
+  grid.innerHTML = Object.keys(sups).sort().map(sup =>
+    `<div class="horas-card">
+      <div class="horas-card-title" style="color:${SUP_COLORS[sup]||'var(--accent)'}">${sup}</div>
+      <div class="horas-card-sub">Objetivo: 6h · ${sups[sup].length} vendedores</div>
+      <div class="horas-chart-wrap"><canvas id="horas-chart-${sup.replace(/ /g,'_')}"></canvas></div>
+    </div>`
+  ).join('');
+
+  Object.keys(sups).sort().forEach(sup => {
+    const group = sups[sup].sort((a,b) => b.horas - a.horas);
+    const canvasId = 'horas-chart-' + sup.replace(/ /g,'_');
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+    if (horasChartInstances[sup]) horasChartInstances[sup].destroy();
+
+    const labels = group.map(x => x.nombre.split(' ')[0] + ' ' + (x.nombre.split(' ')[1]||''));
+    const data   = group.map(x => +x.horas.toFixed(2));
+    const colors = data.map(v => gc2(v));
+
+    horasChartInstances[sup] = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Horas',
+            data,
+            backgroundColor: colors,
+            borderRadius: 5,
+            borderSkipped: false,
+            order: 1,
+          },
+          {
+            label: 'Objetivo',
+            data: Array(labels.length).fill(OBJETIVO),
+            type: 'line',
+            borderColor: '#ffffff55',
+            borderDash: [5,4],
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+            order: 0,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#12141a',
+            borderColor: '#1e2130',
+            borderWidth: 1,
+            titleColor: '#e8eaf0',
+            bodyColor: '#e8eaf0',
+            padding: 10,
+            filter: item => item.datasetIndex === 0,
+            callbacks: {
+              title: items => group[items[0].dataIndex].nombre,
+              label: item => {
+                const h = Math.floor(item.parsed.y);
+                const m = Math.round((item.parsed.y - h) * 60);
+                return ` ${h}h ${m.toString().padStart(2,'0')}m`;
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            min: 0, max: 8,
+            ticks: { color: '#5a6072', callback: v => v+'h', stepSize: 2 },
+            grid: { color: '#1e2130' },
+          },
+          x: {
+            ticks: { color: '#e8eaf0', font: { size: 9 }, maxRotation: 35 },
+            grid: { display: false },
+          }
+        }
+      }
     });
   });
 }
