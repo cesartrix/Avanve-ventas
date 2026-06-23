@@ -129,11 +129,11 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'DM Mono',monospace;font
 .hst-mtab.active{background:var(--accent);color:#0a0b0f;border-color:var(--accent);font-weight:700;}
 .hst-full{grid-column:1/-1;}
 .hst-vendor-row{cursor:pointer;transition:background 0.15s;}
-.horas-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:16px;}
+.horas-grid{display:grid;grid-template-columns:1fr;gap:20px;margin-top:16px;}
 .horas-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 16px;}
 .horas-card-title{font-family:'Syne',sans-serif;font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;}
 .horas-card-sub{font-size:0.65rem;color:var(--muted);margin-bottom:12px;}
-.horas-chart-wrap{position:relative;height:220px;}
+.horas-chart-wrap{position:relative;height:320px;}
 .hst-vendor-row:hover{background:var(--bg);}
 .hst-chart-modal{display:none;position:fixed;inset:0;background:#000000cc;z-index:1000;align-items:center;justify-content:center;padding:20px;}
 .hst-chart-modal.show{display:flex;}
@@ -1063,7 +1063,7 @@ function buildHorasChart() {
     if (!ctx) return;
     if (horasChartInstances[sup]) horasChartInstances[sup].destroy();
 
-    const labels = group.map(x => x.codigo+' '+x.nombre.split(' ')[0] + ' ' + (x.nombre.split(' ')[1]||''));
+    const labels = group.map(x => x.cod+' - '+x.nombre);
     const data   = group.map(x => +x.horas.toFixed(2));
     const colors = data.map(v => gc2(v));
 
@@ -1123,7 +1123,7 @@ function buildHorasChart() {
             grid: { color: '#1e2130' },
           },
           x: {
-            ticks: { color: '#e8eaf0', font: { size: 9 }, maxRotation: 35 },
+            ticks: { color: '#e8eaf0', font: { size: 12 }, maxRotation: 35 },
             grid: { display: false },
           }
         }
