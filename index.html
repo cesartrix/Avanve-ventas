@@ -544,7 +544,7 @@ function parseWB(wb, fname) {
         const cobV = n(row[iCOB]);
         const sup = NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : cobLastSup;
         COB.push({
-          nombre: shortName, supervisor: sup,
+          codigo: cod, nombre: shortName, supervisor: sup,
           cobertura: parseFloat((cobV * 100).toFixed(1)),
           ccc: Math.round(n(row[iCCC])),
           cartera: Math.round(n(row[iCAR])),
