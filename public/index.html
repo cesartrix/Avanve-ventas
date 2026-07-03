@@ -669,7 +669,7 @@ function parseWB(wb, fname) {
         window.GRAND_TOTAL = {
           objetivo:    Math.round(n(row[iObj])),
           facturacion: Math.round(n(row[iFact])),
-          proyeccion:  n(row[iProyec] >= 0 ? row[iProyec] : row[iFact]),
+          proyeccion:  iProyec >= 0 ? n(row[iProyec]) : n(row[iFact]),
         };
         break;
       }
