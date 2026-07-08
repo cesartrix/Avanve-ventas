@@ -266,7 +266,7 @@ tr.sup-group-sum td{
       <div class="panel">
         <div class="ptitle"><span class="dot p"></span>Tabla de avance</div>
         <div class="searchbar"><input id="sav" placeholder="🔍 Buscar vendedor..." oninput="renderAv()"></div>
-        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
+        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Proyección</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
         <div class="mc" id="mc-av"></div>
       </div>
     </div>
@@ -793,6 +793,7 @@ function renderAv(){
         <td>${fmt(x.objetivo)}</td>
         <td>${fmt(x.facturacion)}</td>
         <td>${x.facturacion_dia?fmt(x.facturacion_dia):'—'}</td>
+        <td>${fmt(x.proyeccion)}</td>
         <td><div class="mbw"><div class="mbbg"><div class="mbf ${x.avance_pct<15?'d':''}" style="width:${Math.min(x.avance_pct*100/40,100)}%"></div></div><span class="${x.avance_pct>=20?'ph':x.avance_pct>=12?'pm':'pl'}">${x.avance_pct}%</span></div></td>
         <td class="${c>=100?'ph':c>=80?'pm':'pl'}" style="font-weight:700">${c}%</td>
         <td>${fmt(x.media_real)}</td>
@@ -804,6 +805,7 @@ function renderAv(){
         <div class="mcnm"><span style="font-family:'DM Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:4px">${x.codigo}</span>${i+1}. ${x.nombre}</div>
         <div class="mcr"><span>Facturado</span><span>${fmt(x.facturacion)}</span></div>
         <div class="mcr"><span>Fact. Día</span><span>${x.facturacion_dia?fmt(x.facturacion_dia):"—"}</span></div>
+        <div class="mcr"><span>Proyección</span><span>${fmt(x.proyeccion)}</span></div>
         <div class="mcr"><span>Objetivo</span><span>${fmt(x.objetivo)}</span></div>
         <div class="mcr"><span>Avance</span><span>${x.avance_pct}%</span></div>
         <div class="mcr"><span>Cumpl.</span><span style="color:${gc(c)};font-weight:700">${c}%</span></div>
@@ -826,6 +828,7 @@ function renderAv(){
       <td>${fmt(to)}</td>
       <td>${fmt(tf)}</td>
       <td>${fmt(group.reduce((s,x)=>s+x.facturacion_dia,0))}</td>
+      <td>${fmt(tp)}</td>
       <td></td>
       <td style="color:${gc(+avgC)}">${avgC}%</td>
       <td colspan="2"></td>
@@ -902,7 +905,7 @@ ${document.querySelector('style').textContent}
     <div class="panel">
       <div class="ptitle"><span class="dot p"></span>Tabla de avance</div>
       <div class="searchbar"><input id="sav" placeholder="🔍 Buscar vendedor..." oninput="renderAv()"></div>
-      <div class="ts hm"><table><thead><tr><th>#</th><th>Pos.</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
+      <div class="ts hm"><table><thead><tr><th>#</th><th>Pos.</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Proyección</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
       <div class="mc" id="mc-av"></div>
     </div>
   </div>
