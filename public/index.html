@@ -571,6 +571,9 @@ function parseWB(wb, fname) {
         const cod = m[1], shortName = m[2].trim();
         const cobV = n(row[iCOB]);
         const sup = NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : cobLastSup;
+        // Remove duplicate vendor (keep last occurrence which is the correct supervisor)
+        const dupIdx = COB.findIndex(x => x.codigo === cod);
+        if (dupIdx !== -1) COB.splice(dupIdx, 1);
         COB.push({
           codigo: cod, nombre: shortName, supervisor: sup,
           cobertura: parseFloat((cobV * 100).toFixed(1)),
@@ -751,7 +754,7 @@ function buildCSF(){dc('csf');const vals=SUPS.map(s=>A.filter(d=>d.supervisor===
 function buildCSC(){dc('csc');const vals=SUPS.map(s=>{const d=A.filter(x=>x.supervisor===s);return d.length?(d.reduce((a,x)=>a+x.cumplimiento,0)/d.length).toFixed(1):0;});CH['csc']=new Chart(document.getElementById('csc'),{type:'bar',data:{labels:SUPS.map(sl),datasets:[{data:vals.map(Number),backgroundColor:SUPS.map(s=>sc(s)+'bb'),borderColor:SUPS.map(s=>sc(s)),borderWidth:2,borderRadius:6}]},options:{...co(),plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y.toFixed(1)+'%'}}},scales:{x:co().scales.x,y:{...co().scales.y,ticks:{...co().scales.y.ticks,callback:v=>v+'%'}}}}});}
 
 // ===== KPIs =====
-function buildKpiAv(){const d=filt(A);const dS=d.filter(x=>x.supervisor!=='SIN SUPERVISOR');const gt=window.GRAND_TOTAL;const _curSup=typeof curSup!=='undefined'?curSup:'TODOS';const useGT=gt&&_curSup==='TODOS';const tf=useGT?gt.facturacion:dS.reduce((s,x)=>s+x.facturacion,0),to=useGT?gt.objetivo:dS.reduce((s,x)=>s+x.objetivo,0),tfd=dS.reduce((s,x)=>s+(x.facturacion_dia||0),0),avgA=(dS.reduce((s,x)=>s+x.avance_pct,0)/(dS.length||1)).toFixed(1),avgC=useGT?(gt.proyeccion/gt.objetivo*100).toFixed(1):to>0?(dS.reduce((s,x)=>s+x.proyeccion,0)/to*100).toFixed(1):'0',ok=dS.filter(x=>x.cumplimiento>=100).length,tc=dS.reduce((s,x)=>s+x.cobro,0);document.getElementById('kpi-av').innerHTML=`<div class="kpi"><div class="kl">Facturación</div><div class="kv">${fmtS(tf)}</div><div class="ks">obj ${fmtS(to)}</div></div><div class="kpi o"><div class="kl">Fact. del día</div><div class="kv">${fmtS(tfd)}</div><div class="ks">hoy</div></div><div class="kpi p"><div class="kl">Cumpl. proy.</div><div class="kv">${avgC}%</div><div class="ks">proyectado</div></div><div class="kpi y"><div class="kl">En objetivo</div><div class="kv">${ok}/${d.length}</div><div class="ks">≥100%</div></div><div class="kpi"><div class="kl">Cobros</div><div class="kv">${fmtS(tc)}</div><div class="ks">total cobrado</div></div>`;}
+function buildKpiAv(){const d=filt(A);const dS=d.filter(x=>x.supervisor!=='SIN SUPERVISOR');const gt=window.GRAND_TOTAL;const _curSup=typeof curSup!=='undefined'?curSup:'TODOS';const useGT=gt&&_curSup==='TODOS';const tf=useGT?gt.facturacion:dS.reduce((s,x)=>s+x.facturacion,0),to=useGT?gt.objetivo:dS.reduce((s,x)=>s+x.objetivo,0),tfd=dS.reduce((s,x)=>s+(x.facturacion_dia||0),0),avgA=(dS.reduce((s,x)=>s+x.avance_pct,0)/(dS.length||1)).toFixed(1),avgC=useGT?(gt.proyeccion/gt.objetivo*100).toFixed(1):to>0?(dS.reduce((s,x)=>s+x.proyeccion,0)/to*100).toFixed(1):'0',ok=dS.filter(x=>x.cumplimiento>=100).length,tc=dS.reduce((s,x)=>s+x.cobro,0);document.getElementById('kpi-av').innerHTML=`<div class="kpi"><div class="kl">Facturación</div><div class="kv">${fmtS(tf)}</div><div class="ks">obj ${fmtS(to)}</div></div><div class="kpi o"><div class="kl">Fact. del día</div><div class="kv">${fmtS(tfd)}</div><div class="ks">hoy</div></div><div class="kpi p"><div class="kl">Cumpl. proy.</div><div class="kv">${avgC}%</div><div class="ks">proyectado</div></div><div class="kpi y"><div class="kl">En objetivo</div><div class="kv">${ok}/${d.length}</div><div class="ks">≥100%</div></div><div class="kpi"><div class="kl">Media nec.</div><div class="kv">${fmtS(dS.reduce((s,x)=>s+(x.media_nec||0),0)/(dS.length||1))}</div><div class="ks">promedio</div></div>`;}
 function buildKpiCob(){const d=filt(COB);if(!d.length){document.getElementById('kpi-cob').innerHTML='';return;}const avg=(d.reduce((s,x)=>s+x.cobertura,0)/(d.length||1)).toFixed(1),tc=d.reduce((s,x)=>s+x.ccc,0),tca=d.reduce((s,x)=>s+x.cartera,0),ok=d.filter(x=>x.cobertura>=30).length;document.getElementById('kpi-cob').innerHTML=`<div class="kpi"><div class="kl">Cobertura prom.</div><div class="kv">${avg}%</div><div class="ks">objetivo 85%</div></div><div class="kpi o"><div class="kl">Total CCC</div><div class="kv">${tc}</div><div class="ks">cubiertos</div></div><div class="kpi p"><div class="kl">Cartera total</div><div class="kv">${tca}</div><div class="ks">clientes</div></div><div class="kpi y"><div class="kl">≥30% cobert.</div><div class="kv">${ok}/${d.length}</div><div class="ks">vendedores</div></div>`;}
 
 // ===== TABLES =====
@@ -822,16 +825,19 @@ function renderAv(){
     const avgC=(to>0?tp/to*100:0).toFixed(1);
     const ok=group.filter(x=>x.cumplimiento>=100).length;
     const tc=group.reduce((s,x)=>s+x.cobro,0);
-    rows+=`<tr class="sup-group-sum">
-      <td colspan="2" style="color:${col}">Subtotal</td>
-      <td style="color:${col}">${group.length} vendedores</td>
-      <td>${fmt(to)}</td>
-      <td>${fmt(tf)}</td>
-      <td>${fmt(group.reduce((s,x)=>s+x.facturacion_dia,0))}</td>
-      <td>${fmt(tp)}</td>
+    const tMR=group.reduce((s,x)=>s+(x.media_real||0),0)/group.length;
+    const tMN=group.reduce((s,x)=>s+(x.media_nec||0),0)/group.length;
+    rows+=`<tr class="sup-group-sum" style="font-weight:700;background:#1a1d28">
+      <td colspan="2" style="color:#ffffff">&nbsp;</td>
+      <td style="color:#ffffff;font-weight:800">${sl(sup)}</td>
+      <td style="color:#ffffff">${fmt(to)}</td>
+      <td style="color:#ffffff">${fmt(tf)}</td>
+      <td style="color:#ffffff">${fmt(group.reduce((s,x)=>s+x.facturacion_dia,0))}</td>
+      <td style="color:#ffffff">${fmt(tp)}</td>
       <td></td>
-      <td style="color:${gc(+avgC)}">${avgC}%</td>
-      <td colspan="2"></td>
+      <td style="color:${gc(+avgC)};font-weight:800">${avgC}%</td>
+      <td style="color:#ffffff">${fmt(tMR)}</td>
+      <td style="color:#ffffff">${fmt(tMN)}</td>
       <td>${tc?fmt(tc):'—'}</td>
       <td style="color:var(--accent)">${ok}/${group.length} ok</td>
     </tr>`;
