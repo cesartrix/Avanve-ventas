@@ -1030,7 +1030,7 @@ function buildHistorico() {
 
 function getCurName(cod) {
   // Look up current name from avance data by vendor code
-  const v = (window.A||[]).find(x => x.codigo === cod);
+  const v = A.find(x => x.codigo === String(cod));
   return v ? v.nombre : null;
 }
 
