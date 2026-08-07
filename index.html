@@ -605,6 +605,24 @@ function parseWB(wb, fname) {
       const iFac2 = hasSup ? 3 : 2;
       const iProy = hasSup ? 7 : 6;
       const nn = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
+      // Cobertura del mes: siempre en columnas M-T (idx 12-19), fijo sin importar el formato de A-L
+      const covByCod = {};
+      for (let i=1; i<hRaw.length; i++) {
+        const cr = hRaw[i];
+        if (!cr) continue;
+        const codRaw = cr[12];
+        if (codRaw === null || codRaw === undefined || String(codRaw).trim() === '') continue;
+        const codStr = String(parseInt(codRaw,10));
+        if (!codStr || codStr === 'NaN') continue;
+        covByCod[codStr] = {
+          cobertura: +(nn(cr[14]) * 100).toFixed(1),
+          diaAnterior: nn(cr[15]),
+          incremento: nn(cr[16]),
+          cartera: nn(cr[17]),
+          ccc: nn(cr[18]),
+          ccc_faltante: +nn(cr[19]).toFixed(1),
+        };
+      }
       let lastSup = '';
       const vendedores = [];
       for (let i=1; i<hRaw.length; i++) {
@@ -621,12 +639,17 @@ function parseWB(wb, fname) {
         if (!m) continue;
         const obj = nn(r[iObj2]), fac = nn(r[iFac2]), proy = nn(r[iProy]);
         if (obj === 0 && fac === 0) continue;
+        const cov = covByCod[m[1]] || null;
         vendedores.push({
           codigo: m[1], nombre: m[2].trim(),
           supervisor: lastSup || 'SIN SUPERVISOR',
           objetivo: obj, facturacion: fac,
           proyeccion: proy,
           cumplimiento: obj > 0 ? proy/obj*100 : 0,
+          cobertura: cov ? cov.cobertura : null,
+          ccc: cov ? cov.ccc : null,
+          cartera: cov ? cov.cartera : null,
+          ccc_faltante: cov ? cov.ccc_faltante : null,
         });
       }
       if (vendedores.length) window.HIST.push({ mes, vendedores });
@@ -1047,6 +1070,7 @@ function renderHist(idx, btn) {
   const cumplGen = totalObj > 0 ? (totalProy/totalObj*100).toFixed(1) : '—';
   const fmtM = v => v>=1e9?(v/1e9).toFixed(2)+'B':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v.toFixed(0);
   const gc = v => v>=100?'var(--accent)':v>=80?'var(--warn)':'var(--danger)';
+  const gcCov = v => v>=30?'#00d4aa':v>=15?'#ffcc00':'#ff4545';
 
   // Group by supervisor
   const sups = {};
@@ -1055,7 +1079,7 @@ function renderHist(idx, btn) {
     sups[x.supervisor].push(x);
   });
 
-  // Supervisor summary bars
+  // Supervisor summary bars (avance)
   const supNames = Object.keys(sups).filter(s=>s!=='SIN SUPERVISOR');
   const supBars = supNames.map(s => {
     const g = sups[s];
@@ -1066,8 +1090,19 @@ function renderHist(idx, btn) {
   }).sort((a,b)=>b.cumpl-a.cumpl);
   const maxCumpl = Math.max(...supBars.map(x=>x.cumpl), 100);
 
-  // Ranking vendedores
-  const ranked = [...vens].sort((a,b)=>b.cumplimiento-a.cumplimiento);
+  // Cobertura: vendedores con dato disponible ese mes
+  const vensCov = vens.filter(x => x.cobertura !== null && x.cobertura !== undefined);
+  const avgCov = vensCov.length ? (vensCov.reduce((s,x)=>s+x.cobertura,0)/vensCov.length).toFixed(1) : '—';
+  const totalCCC = vensCov.reduce((s,x)=>s+(x.ccc||0),0);
+  const totalCartera = vensCov.reduce((s,x)=>s+(x.cartera||0),0);
+
+  // Supervisor summary bars (cobertura) - mismo estilo que el avance
+  const supBarsCov = supNames.map(s => {
+    const g = sups[s].filter(x => x.cobertura !== null && x.cobertura !== undefined);
+    const cumpl = g.length ? (g.reduce((a,x)=>a+x.cobertura,0)/g.length).toFixed(1) : 0;
+    return {sup:s, cumpl:+cumpl};
+  }).sort((a,b)=>b.cumpl-a.cumpl);
+  const maxCumplCov = Math.max(...supBarsCov.map(x=>x.cumpl), 100);
 
   gridEl.innerHTML = `
     <div class="hst-card">
@@ -1094,17 +1129,42 @@ function renderHist(idx, btn) {
           <div class="hst-bar-val" style="color:${gc(s.cumpl)}">${s.cumpl}%</div>
         </div>`).join('')}
     </div>
-    <div class="hst-card"hst-title">👥 Vendedores por supervisor</div>
+    <div class="hst-card">
+      <div class="hst-title">🗂 Cobertura ${h.mes}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div style="text-align:center">
+          <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;color:${avgCov==='—'?'var(--text)':gcCov(+avgCov)}">${avgCov}${avgCov==='—'?'':'%'}</div>
+          <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Cobertura prom.</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;color:var(--text)">${totalCCC}</div>
+          <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">CCC</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;color:var(--text)">${totalCartera}</div>
+          <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Cartera</div>
+        </div>
+      </div>
+      <div class="hst-title">Por supervisor</div>
+      ${supBarsCov.map(s=>`
+        <div class="hst-bar-row">
+          <div class="hst-bar-label">${s.sup.split(' ')[0]}</div>
+          <div class="hst-bar-wrap"><div class="hst-bar-fill" style="width:${Math.min(s.cumpl/maxCumplCov*100,100)}%;background:${gcCov(s.cumpl)}"></div></div>
+          <div class="hst-bar-val" style="color:${gcCov(s.cumpl)}">${s.cumpl}%</div>
+        </div>`).join('')}
+    </div>
+    <div class="hst-card hst-full">
+      <div class="hst-title">👥 Vendedores por supervisor</div>
       <table class="hst-tbl">
-        <thead><tr><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Cumpl.</th></tr></thead>
+        <thead><tr><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Cumpl.</th><th>Cobertura</th></tr></thead>
         <tbody>
           ${Object.keys(sups).filter(s=>s!=='SIN SUPERVISOR').map(s => {
             const g = sups[s].sort((a,b)=>b.cumplimiento-a.cumplimiento);
             const gObj = g.reduce((a,x)=>a+x.objetivo,0);
             const gProy = g.reduce((a,x)=>a+x.proyeccion,0);
             const gCumpl = gObj>0?(gProy/gObj*100).toFixed(1):0;
-            return '<tr style="background:var(--border)"><td colspan="3" style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">'+s+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td></tr>'
-              + g.map(x=>'<tr class="hst-vendor-row" data-cod="'+x.codigo+'" data-nom="'+(getCurName(x.codigo)||x.nombre).replace(/"/g,'')+'"><td style="color:var(--text);padding-left:10px"><span style=\'color:var(--muted);font-size:0.62rem;margin-right:4px\'>'+x.codigo+'</span>'+(getCurName(x.codigo)||x.nombre)+'</td><td>'+fmtM(x.objetivo)+'</td><td>'+fmtM(x.facturacion)+'</td><td style="color:'+gc(x.cumplimiento)+';font-weight:700">'+x.cumplimiento.toFixed(1)+'%</td></tr>').join('');
+            return '<tr style="background:var(--border)"><td colspan="3" style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">'+s+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td><td></td></tr>'
+              + g.map(x=>'<tr class="hst-vendor-row" data-cod="'+x.codigo+'" data-nom="'+(getCurName(x.codigo)||x.nombre).replace(/"/g,'')+'"><td style="color:var(--text);padding-left:10px"><span style=\'color:var(--muted);font-size:0.62rem;margin-right:4px\'>'+x.codigo+'</span>'+(getCurName(x.codigo)||x.nombre)+'</td><td>'+fmtM(x.objetivo)+'</td><td>'+fmtM(x.facturacion)+'</td><td style="color:'+gc(x.cumplimiento)+';font-weight:700">'+x.cumplimiento.toFixed(1)+'%</td><td style="color:'+(x.cobertura===null||x.cobertura===undefined?'var(--muted)':gcCov(x.cobertura))+';font-weight:700">'+(x.cobertura===null||x.cobertura===undefined?'—':x.cobertura.toFixed(1)+'%')+'</td></tr>').join('');
           }).join('')}
         </tbody>
       </table>
@@ -1431,12 +1491,14 @@ function showVendorChart(codigo, nombre) {
   const labels = [];
   const dataCumpl = [];
   const dataFact = [];
+  const dataCov = [];
   window.HIST.forEach(h => {
     const v = h.vendedores.find(x => x.codigo === codigo);
     if (v) {
       labels.push(h.mes);
       dataCumpl.push(+v.cumplimiento.toFixed(1));
       dataFact.push(v.facturacion);
+      dataCov.push(v.cobertura !== null && v.cobertura !== undefined ? +v.cobertura.toFixed(1) : null);
     }
   });
 
@@ -1462,13 +1524,32 @@ function showVendorChart(codigo, nombre) {
         pointBorderColor: '#0a0b0f',
         pointBorderWidth: 2,
         borderWidth: 2.5,
+        yAxisID: 'y',
+      }, {
+        label: 'Cobertura %',
+        data: dataCov,
+        borderColor: '#7b61ff',
+        backgroundColor: '#7b61ff22',
+        fill: false,
+        tension: 0.35,
+        pointRadius: 5,
+        pointBackgroundColor: dataCov.map(v => v===null?'#5a6072':v>=30?'#00d4aa':v>=15?'#ffcc00':'#ff4545'),
+        pointBorderColor: '#0a0b0f',
+        pointBorderWidth: 2,
+        borderWidth: 2.5,
+        borderDash: [5,3],
+        spanGaps: true,
+        yAxisID: 'y1',
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          labels: { color: '#e8eaf0', font: { size: 10 } }
+        },
         tooltip: {
           backgroundColor: '#12141a',
           borderColor: '#1e2130',
@@ -1477,15 +1558,21 @@ function showVendorChart(codigo, nombre) {
           bodyColor: '#e8eaf0',
           padding: 10,
           callbacks: {
-            label: (ctx) => `Cumplimiento: ${ctx.parsed.y}%`,
-            afterLabel: (ctx) => `Facturado: ${fmtS(dataFact[ctx.dataIndex])}`
+            label: (ctx) => ctx.datasetIndex === 0 ? `Cumplimiento: ${ctx.parsed.y}%` : `Cobertura: ${ctx.parsed.y===null?'—':ctx.parsed.y+'%'}`,
+            afterLabel: (ctx) => ctx.datasetIndex === 0 ? `Facturado: ${fmtS(dataFact[ctx.dataIndex])}` : ''
           }
         }
       },
       scales: {
         y: {
+          position: 'left',
           ticks: { color: '#5a6072', callback: v => v+'%' },
           grid: { color: '#1e2130' },
+        },
+        y1: {
+          position: 'right',
+          ticks: { color: '#5a6072', callback: v => v+'%' },
+          grid: { display: false },
         },
         x: {
           ticks: { color: '#5a6072' },
