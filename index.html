@@ -197,6 +197,14 @@ tr.sup-group-sum td{
       <div class="hst-chart-title" id="hst-chart-title">Vendedor</div>
       <button class="hst-chart-close" onclick="closeHistChart()">✕</button>
     </div>
+    <div class="hst-chart-toggles" style="display:flex;gap:16px;padding:0 4px 10px;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--text);cursor:pointer;">
+        <input type="checkbox" id="hst-tgl-cumpl" checked onchange="toggleHistDataset(0,this.checked)" style="accent-color:#00d4aa"> Cumplimiento
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--text);cursor:pointer;">
+        <input type="checkbox" id="hst-tgl-cov" checked onchange="toggleHistDataset(1,this.checked)" style="accent-color:#7b61ff"> Cobertura
+      </label>
+    </div>
     <div class="hst-chart-canvas-wrap"><canvas id="hst-chart-canvas"></canvas></div>
   </div>
 </div>
@@ -1519,6 +1527,8 @@ function showVendorChart(codigo, nombre) {
 
   document.getElementById('hst-chart-title').textContent = `📈 ${nombre}`;
   document.getElementById('hst-chart-modal').classList.add('show');
+  document.getElementById('hst-tgl-cumpl').checked = true;
+  document.getElementById('hst-tgl-cov').checked = true;
 
   const ctx = document.getElementById('hst-chart-canvas').getContext('2d');
   if (histChartInstance) histChartInstance.destroy();
@@ -1561,10 +1571,7 @@ function showVendorChart(codigo, nombre) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: {
-          display: true,
-          labels: { color: '#e8eaf0', font: { size: 10 } }
-        },
+        legend: { display: false },
         tooltip: {
           backgroundColor: '#12141a',
           borderColor: '#1e2130',
@@ -1600,6 +1607,12 @@ function showVendorChart(codigo, nombre) {
 
 function closeHistChart() {
   document.getElementById('hst-chart-modal').classList.remove('show');
+}
+
+function toggleHistDataset(idx, visible) {
+  if (!histChartInstance) return;
+  histChartInstance.setDatasetVisibility(idx, visible);
+  histChartInstance.update();
 }
 
 // ===== INIT =====
