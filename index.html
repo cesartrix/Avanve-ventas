@@ -330,14 +330,17 @@ tr.sup-group-sum td{
     <div class="pg" id="pg-proveedores">
       <div class="panel">
         <div class="ptitle"><span class="dot"></span>Evolución por proveedor</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
-          <select class="traz-select" id="vxp-prov" style="width:auto;min-width:200px;margin-bottom:0;"></select>
-          <select class="traz-select" id="vxp-vend" style="width:auto;min-width:220px;margin-bottom:0;"></select>
+        <div id="vxp-nosheet" style="display:none;text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">Este archivo no tiene la hoja "Venta x Proveedor". Subí un Excel que la incluya para ver esta pestaña.</div>
+        <div id="vxp-body">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+            <select class="traz-select" id="vxp-prov" style="width:auto;min-width:200px;margin-bottom:0;"></select>
+            <select class="traz-select" id="vxp-vend" style="width:auto;min-width:220px;margin-bottom:0;"></select>
+          </div>
+          <div class="kstrip" id="vxp-stats"></div>
+          <div style="position:relative;height:280px;"><canvas id="vxpChart"></canvas></div>
+          <div id="vxp-legend" style="display:flex;gap:16px;margin-top:10px;font-size:0.68rem;color:var(--muted)"></div>
+          <div id="vxp-empty" style="display:none;text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">Sin datos de este proveedor para el supervisor seleccionado.</div>
         </div>
-        <div class="kstrip" id="vxp-stats"></div>
-        <div style="position:relative;height:280px;"><canvas id="vxpChart"></canvas></div>
-        <div id="vxp-legend" style="display:flex;gap:16px;margin-top:10px;font-size:0.68rem;color:var(--muted)"></div>
-        <div id="vxp-empty" style="display:none;text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">Sin datos de este proveedor para el supervisor seleccionado.</div>
       </div>
     </div>
     <div class="pg" id="pg-ranking">
@@ -952,9 +955,17 @@ function refresh(){buildKpiAv();buildKpiCob();buildCC();buildCF();buildCCob();bu
 // ===== VENTA X PROVEEDOR: UI =====
 function buildVxpProveedores() {
   const sel = document.getElementById('vxp-prov');
+  const noSheetEl = document.getElementById('vxp-nosheet');
+  const bodyEl = document.getElementById('vxp-body');
   if (!sel || !window.VXP || !window.VXP.data) return;
   const provs = Object.keys(window.VXP.data).sort((a,b)=>a.localeCompare(b));
-  if (!provs.length) return;
+  if (!provs.length) {
+    if (noSheetEl) noSheetEl.style.display = 'block';
+    if (bodyEl) bodyEl.style.display = 'none';
+    return;
+  }
+  if (noSheetEl) noSheetEl.style.display = 'none';
+  if (bodyEl) bodyEl.style.display = 'block';
   const keep = sel.value;
   sel.innerHTML = provs.map(p => `<option value="${p}">${p}</option>`).join('');
   if (provs.includes(keep)) sel.value = keep;
