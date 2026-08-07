@@ -605,23 +605,31 @@ function parseWB(wb, fname) {
       const iFac2 = hasSup ? 3 : 2;
       const iProy = hasSup ? 7 : 6;
       const nn = v => { const n=parseFloat(v); return isNaN(n)?0:n; };
-      // Cobertura del mes: siempre en columnas M-T (idx 12-19), fijo sin importar el formato de A-L
+      // Cobertura del mes: la posicion de las columnas varia segun el mes (a veces hay
+      // una columna SUPERVISOR extra antes del codigo). Se ubica por el encabezado
+      // "COBERTURA TOTAL" y se calculan las demas columnas en forma relativa a esa:
+      // [-2]=codigo [-1]=vendedor(label) [0]=cobertura total [+1]=dia anterior
+      // [+2]=incremento diario [+3]=cartera total [+4]=CCC [+5]=CCC faltante 85%
       const covByCod = {};
-      for (let i=1; i<hRaw.length; i++) {
-        const cr = hRaw[i];
-        if (!cr) continue;
-        const codRaw = cr[12];
-        if (codRaw === null || codRaw === undefined || String(codRaw).trim() === '') continue;
-        const codStr = String(parseInt(codRaw,10));
-        if (!codStr || codStr === 'NaN') continue;
-        covByCod[codStr] = {
-          cobertura: +(nn(cr[14]) * 100).toFixed(1),
-          diaAnterior: nn(cr[15]),
-          incremento: nn(cr[16]),
-          cartera: nn(cr[17]),
-          ccc: nn(cr[18]),
-          ccc_faltante: +nn(cr[19]).toFixed(1),
-        };
+      const iCobTotal = hHead.findIndex(hh => hh === 'COBERTURA TOTAL');
+      if (iCobTotal > 1) {
+        const iCod = iCobTotal - 2;
+        for (let i=1; i<hRaw.length; i++) {
+          const cr = hRaw[i];
+          if (!cr) continue;
+          const codRaw = cr[iCod];
+          if (codRaw === null || codRaw === undefined || String(codRaw).trim() === '') continue;
+          const codStr = String(parseInt(codRaw,10));
+          if (!codStr || codStr === 'NaN') continue;
+          covByCod[codStr] = {
+            cobertura: +(nn(cr[iCobTotal]) * 100).toFixed(1),
+            diaAnterior: nn(cr[iCobTotal+1]),
+            incremento: nn(cr[iCobTotal+2]),
+            cartera: nn(cr[iCobTotal+3]),
+            ccc: nn(cr[iCobTotal+4]),
+            ccc_faltante: +nn(cr[iCobTotal+5]).toFixed(1),
+          };
+        }
       }
       let lastSup = '';
       const vendedores = [];
