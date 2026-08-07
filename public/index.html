@@ -650,7 +650,7 @@ function parseWB(wb, fname) {
         const cov = covByCod[m[1]] || null;
         vendedores.push({
           codigo: m[1], nombre: m[2].trim(),
-          supervisor: lastSup || 'SIN SUPERVISOR',
+          supervisor: getCurSup(m[1]) || lastSup || 'SIN SUPERVISOR',
           objetivo: obj, facturacion: fac,
           proyeccion: proy,
           cumplimiento: obj > 0 ? proy/obj*100 : 0,
@@ -1063,6 +1063,13 @@ function getCurName(cod) {
   // Look up current name from avance data by vendor code
   const v = A.find(x => x.codigo === String(cod));
   return v ? v.nombre : null;
+}
+
+function getCurSup(cod) {
+  // Respeta el tablero de avance (A) como fuente de verdad del supervisor actual
+  // de cada vendedor, usando el numero de vendedor como unica referencia.
+  const v = A.find(x => x.codigo === String(cod));
+  return v ? v.supervisor : null;
 }
 
 function renderHist(idx, btn) {
