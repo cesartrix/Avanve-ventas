@@ -204,6 +204,9 @@ tr.sup-group-sum td{
       <label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--text);cursor:pointer;">
         <input type="checkbox" id="hst-tgl-cov" checked onchange="toggleHistDataset(1,this.checked)" style="accent-color:#7b61ff"> Cobertura
       </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--text);cursor:pointer;">
+        <input type="checkbox" id="hst-tgl-sku" checked onchange="toggleHistDataset(2,this.checked)" style="accent-color:#ffcc00"> Cant. SKU
+      </label>
     </div>
     <div class="hst-chart-canvas-wrap"><canvas id="hst-chart-canvas"></canvas></div>
   </div>
@@ -275,7 +278,7 @@ tr.sup-group-sum td{
       <div class="panel">
         <div class="ptitle"><span class="dot p"></span>Tabla de avance</div>
         <div class="searchbar"><input id="sav" placeholder="🔍 Buscar vendedor..." oninput="renderAv()"></div>
-        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Proyección</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
+        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Proyección</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Cant. SKU</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
         <div class="mc" id="mc-av"></div>
       </div>
     </div>
@@ -391,6 +394,30 @@ const filt=d=>cur==='TODOS'?d:d.filter(x=>x.supervisor===cur);
 const tag=(s,sm)=>{const c=sc(s);return`<span style="background:${c}22;color:${c};padding:2px 6px;border-radius:10px;font-size:${sm?'0.57':'0.6'}rem;font-weight:700">${sl(s)}</span>`;};
 const n=v=>{const f=parseFloat(v);return isNaN(f)?0:f;};
 const isBlank=v=>v===null||v===undefined||String(v).trim()===''||String(v).trim()==='nan';
+
+// Extrae tabla(s) de "Cantidad SKU" (bloques codigo/nombre/cantidad) desde una
+// hoja cruda (header:1). Escanea todas las columnas a partir de colStart buscando
+// tripletas [codigo numerico, nombre texto, cantidad numerica], sin importar en
+// qué sub-bloque de columnas caigan (la hoja tiene varios bloques lado a lado).
+function extractSkuMap(raw, colStart) {
+  const map = {};
+  const isIntNum = v => typeof v === 'number' && isFinite(v) && Math.round(v) === v;
+  for (let r = 0; r < raw.length; r++) {
+    const row = raw[r];
+    if (!row) continue;
+    for (let c = colStart; c + 2 < row.length; c++) {
+      const v1 = row[c], v2 = row[c+1], v3 = row[c+2];
+      if (!isIntNum(v1)) continue;
+      if (typeof v2 !== 'string') continue;
+      const v2t = v2.trim();
+      if (!v2t || !/[A-Za-zÀ-ÿ]/.test(v2t) || /^\d+$/.test(v2t)) continue;
+      if (!isIntNum(v3)) continue;
+      map[String(v1)] = { nombre: v2t, cantidad: v3 };
+    }
+  }
+  return map;
+}
+
 
 // Normaliza texto de supervisor a clave interna
 function normSup(raw) {
@@ -550,6 +577,18 @@ function parseWB(wb, fname) {
 
     if (A.length === 0) throw new Error('No se encontraron vendedores. Verificá que el archivo sea el reporte correcto de Chess.');
 
+    // ---- CANTIDAD SKU (mes actual) ----
+    window.SKU_CUR = {};
+    if (wb.SheetNames.includes('Cantidad Sku')) {
+      const skuWS = wb.Sheets['Cantidad Sku'];
+      const skuRaw = XLSX.utils.sheet_to_json(skuWS, {header:1, defval:null});
+      window.SKU_CUR = extractSkuMap(skuRaw, 0);
+    }
+    A.forEach(x => {
+      const s = window.SKU_CUR[x.codigo];
+      x.cantidad_sku = s ? s.cantidad : null;
+    });
+
     // ---- COBERTURA ----
     COB = [];
     if (wb.SheetNames.includes('COBERTURA')) {
@@ -666,6 +705,7 @@ function parseWB(wb, fname) {
       const hRaw = XLSX.utils.sheet_to_json(hWS, {header:1, defval:null});
       if (!hRaw.length) continue;
       const hHead = hRaw[0].map(h => String(h||'').trim().toUpperCase());
+      const hSkuMap = extractSkuMap(hRaw, 21); // col V (0-indexed 21) en adelante
       // hasSup: col[0]='SUPERVISOR' y col[1]='VENDEDOR' (formato Mayo+)
       // !hasSup: col[0]='VENDEDOR/ SUPERVISOR' y vendedor directo en col[0]
       const hasSup = hHead[0] === 'SUPERVISOR' && hHead[1] === 'VENDEDOR';
@@ -727,6 +767,7 @@ function parseWB(wb, fname) {
           ccc: cov ? cov.ccc : null,
           cartera: cov ? cov.cartera : null,
           ccc_faltante: cov ? cov.ccc_faltante : null,
+          cantidad_sku: hSkuMap[m[1]] ? hSkuMap[m[1]].cantidad : null,
         });
       }
       if (vendedores.length) window.HIST.push({ mes, vendedores });
@@ -855,7 +896,7 @@ function buildCSF(){dc('csf');const vals=SUPS.map(s=>A.filter(d=>d.supervisor===
 function buildCSC(){dc('csc');const vals=SUPS.map(s=>{const d=A.filter(x=>x.supervisor===s);return d.length?(d.reduce((a,x)=>a+x.cumplimiento,0)/d.length).toFixed(1):0;});CH['csc']=new Chart(document.getElementById('csc'),{type:'bar',data:{labels:SUPS.map(sl),datasets:[{data:vals.map(Number),backgroundColor:SUPS.map(s=>sc(s)+'bb'),borderColor:SUPS.map(s=>sc(s)),borderWidth:2,borderRadius:6}]},options:{...co(),plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y.toFixed(1)+'%'}}},scales:{x:co().scales.x,y:{...co().scales.y,ticks:{...co().scales.y.ticks,callback:v=>v+'%'}}}}});}
 
 // ===== KPIs =====
-function buildKpiAv(){const d=filt(A);const dS=d.filter(x=>x.supervisor!=='SIN SUPERVISOR');const gt=window.GRAND_TOTAL;const _curSup=typeof curSup!=='undefined'?curSup:'TODOS';const useGT=gt&&_curSup==='TODOS';const tf=useGT?gt.facturacion:dS.reduce((s,x)=>s+x.facturacion,0),to=useGT?gt.objetivo:dS.reduce((s,x)=>s+x.objetivo,0),tfd=dS.reduce((s,x)=>s+(x.facturacion_dia||0),0),avgA=(dS.reduce((s,x)=>s+x.avance_pct,0)/(dS.length||1)).toFixed(1),avgC=useGT?(gt.proyeccion/gt.objetivo*100).toFixed(1):to>0?(dS.reduce((s,x)=>s+x.proyeccion,0)/to*100).toFixed(1):'0',ok=dS.filter(x=>x.cumplimiento>=100).length,tc=dS.reduce((s,x)=>s+x.cobro,0);document.getElementById('kpi-av').innerHTML=`<div class="kpi"><div class="kl">Facturación</div><div class="kv">${fmtS(tf)}</div><div class="ks">obj ${fmtS(to)}</div></div><div class="kpi o"><div class="kl">Fact. del día</div><div class="kv">${fmtS(tfd)}</div><div class="ks">hoy</div></div><div class="kpi p"><div class="kl">Cumpl. proy.</div><div class="kv">${avgC}%</div><div class="ks">proyectado</div></div><div class="kpi y"><div class="kl">En objetivo</div><div class="kv">${ok}/${d.length}</div><div class="ks">≥100%</div></div><div class="kpi"><div class="kl">Media nec.</div><div class="kv">${fmtS(dS.reduce((s,x)=>s+(x.media_nec||0),0)/(dS.length||1))}</div><div class="ks">promedio</div></div>`;}
+function buildKpiAv(){const d=filt(A);const dS=d.filter(x=>x.supervisor!=='SIN SUPERVISOR');const gt=window.GRAND_TOTAL;const _curSup=typeof curSup!=='undefined'?curSup:'TODOS';const useGT=gt&&_curSup==='TODOS';const tf=useGT?gt.facturacion:dS.reduce((s,x)=>s+x.facturacion,0),to=useGT?gt.objetivo:dS.reduce((s,x)=>s+x.objetivo,0),tfd=dS.reduce((s,x)=>s+(x.facturacion_dia||0),0),avgA=(dS.reduce((s,x)=>s+x.avance_pct,0)/(dS.length||1)).toFixed(1),avgC=useGT?(gt.proyeccion/gt.objetivo*100).toFixed(1):to>0?(dS.reduce((s,x)=>s+x.proyeccion,0)/to*100).toFixed(1):'0',ok=dS.filter(x=>x.cumplimiento>=100).length,tc=dS.reduce((s,x)=>s+x.cobro,0),tSku=dS.reduce((s,x)=>s+(x.cantidad_sku||0),0);document.getElementById('kpi-av').innerHTML=`<div class="kpi"><div class="kl">Facturación</div><div class="kv">${fmtS(tf)}</div><div class="ks">obj ${fmtS(to)}</div></div><div class="kpi o"><div class="kl">Fact. del día</div><div class="kv">${fmtS(tfd)}</div><div class="ks">hoy</div></div><div class="kpi p"><div class="kl">Cumpl. proy.</div><div class="kv">${avgC}%</div><div class="ks">proyectado</div></div><div class="kpi y"><div class="kl">En objetivo</div><div class="kv">${ok}/${d.length}</div><div class="ks">≥100%</div></div><div class="kpi"><div class="kl">Media nec.</div><div class="kv">${fmtS(dS.reduce((s,x)=>s+(x.media_nec||0),0)/(dS.length||1))}</div><div class="ks">promedio</div></div><div class="kpi"><div class="kl">Cant. SKU</div><div class="kv">${tSku}</div><div class="ks">vendidos</div></div>`;}
 function buildKpiCob(){const d=filt(COB);if(!d.length){document.getElementById('kpi-cob').innerHTML='';return;}const avg=(d.reduce((s,x)=>s+x.cobertura,0)/(d.length||1)).toFixed(1),tc=d.reduce((s,x)=>s+x.ccc,0),tca=d.reduce((s,x)=>s+x.cartera,0),ok=d.filter(x=>x.cobertura>=30).length;document.getElementById('kpi-cob').innerHTML=`<div class="kpi"><div class="kl">Cobertura prom.</div><div class="kv">${avg}%</div><div class="ks">objetivo 85%</div></div><div class="kpi o"><div class="kl">Total CCC</div><div class="kv">${tc}</div><div class="ks">cubiertos</div></div><div class="kpi p"><div class="kl">Cartera total</div><div class="kv">${tca}</div><div class="ks">clientes</div></div><div class="kpi y"><div class="kl">≥30% cobert.</div><div class="kv">${ok}/${d.length}</div><div class="ks">vendedores</div></div>`;}
 
 // ===== TABLES =====
@@ -873,7 +914,7 @@ function renderAv(){
     const col=sc(sup);
 
     // Group header row
-    rows+=`<tr class="sup-group-hdr"><td colspan="12" style="color:${col};border-bottom-color:${col}">
+    rows+=`<tr class="sup-group-hdr"><td colspan="13" style="color:${col};border-bottom-color:${col}">
       <span style="display:inline-flex;align-items:center;gap:8px;">
         <span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>
         ${sl(sup)}
@@ -903,6 +944,7 @@ function renderAv(){
         <td>${fmt(x.media_real)}</td>
         <td>${fmt(x.media_nec)}</td>
         <td>${x.cobro?fmt(x.cobro):'—'}</td>
+        <td style="color:var(--text);font-weight:600">${x.cantidad_sku!=null?x.cantidad_sku:'—'}</td>
         <td>${badge}</td>
       </tr>`;
       mcRows+=`<div class="mcard" style="border-left:3px solid ${col}">
@@ -915,6 +957,7 @@ function renderAv(){
         <div class="mcr"><span>Cumpl.</span><span style="color:${gc(c)};font-weight:700">${c}%</span></div>
         <div class="mcr"><span>Media real</span><span>${fmt(x.media_real)}</span></div>
         <div class="mcr"><span>Media nec.</span><span>${fmt(x.media_nec)}</span></div>
+        <div class="mcr"><span>Cant. SKU</span><span>${x.cantidad_sku!=null?x.cantidad_sku:"—"}</span></div>
       </div>`;
     });
 
@@ -928,6 +971,7 @@ function renderAv(){
     const tc=group.reduce((s,x)=>s+x.cobro,0);
     const tMR=group.reduce((s,x)=>s+(x.media_real||0),0)/group.length;
     const tMN=group.reduce((s,x)=>s+(x.media_nec||0),0)/group.length;
+    const tSku=group.reduce((s,x)=>s+(x.cantidad_sku||0),0);
     rows+=`<tr class="sup-group-sum" style="font-weight:700;background:#1a1d28">
       <td colspan="2" style="color:#ffffff">&nbsp;</td>
       <td style="color:#ffffff;font-weight:800">${sl(sup)}</td>
@@ -940,6 +984,7 @@ function renderAv(){
       <td style="color:#ffffff">${fmt(tMR)}</td>
       <td style="color:#ffffff">${fmt(tMN)}</td>
       <td>${tc?fmt(tc):'—'}</td>
+      <td style="color:#ffffff;font-weight:800">${tSku}</td>
       <td style="color:var(--accent)">${ok}/${group.length} ok</td>
     </tr>`;
   });
@@ -1267,6 +1312,7 @@ function renderHist(idx, btn) {
   const totalFac = vens.reduce((s,x)=>s+x.facturacion,0);
   const totalProy = vens.reduce((s,x)=>s+x.proyeccion,0);
   const cumplGen = totalObj > 0 ? (totalProy/totalObj*100).toFixed(1) : '—';
+  const totalSku = vens.reduce((s,x)=>s+(x.cantidad_sku||0),0);
   const fmtM = v => v>=1e9?(v/1e9).toFixed(2)+'B':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v.toFixed(0);
   const gc = v => v>=100?'var(--accent)':v>=80?'var(--warn)':'var(--danger)';
   const gcCov = v => v>=30?'#00d4aa':v>=15?'#ffcc00':'#ff4545';
@@ -1306,7 +1352,7 @@ function renderHist(idx, btn) {
   gridEl.innerHTML = `
     <div class="hst-card">
       <div class="hst-title">📊 Resumen ${h.mes}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
         <div style="text-align:center">
           <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;color:var(--accent)">${fmtM(totalFac)}</div>
           <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Facturado</div>
@@ -1318,6 +1364,10 @@ function renderHist(idx, btn) {
         <div style="text-align:center">
           <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;color:${gc(+cumplGen)}">${cumplGen}%</div>
           <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Cumpl. Proy.</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:1.3rem;font-weight:800;font-family:'Syne',sans-serif;color:var(--text)">${totalSku}</div>
+          <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">SKU vendidos</div>
         </div>
       </div>
       <div class="hst-title">Por supervisor</div>
@@ -1355,15 +1405,16 @@ function renderHist(idx, btn) {
     <div class="hst-card hst-full">
       <div class="hst-title">👥 Vendedores por supervisor</div>
       <table class="hst-tbl">
-        <thead><tr><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Cumpl.</th><th>Cobertura</th></tr></thead>
+        <thead><tr><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Cumpl.</th><th>Cobertura</th><th>SKU</th></tr></thead>
         <tbody>
           ${Object.keys(sups).filter(s=>s!=='SIN SUPERVISOR').map(s => {
             const g = sups[s].sort((a,b)=>b.cumplimiento-a.cumplimiento);
             const gObj = g.reduce((a,x)=>a+x.objetivo,0);
             const gProy = g.reduce((a,x)=>a+x.proyeccion,0);
             const gCumpl = gObj>0?(gProy/gObj*100).toFixed(1):0;
-            return '<tr style="background:var(--border)"><td colspan="3" style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">'+s+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td><td></td></tr>'
-              + g.map(x=>'<tr class="hst-vendor-row" data-cod="'+x.codigo+'" data-nom="'+(getCurName(x.codigo)||x.nombre).replace(/"/g,'')+'"><td style="color:var(--text);padding-left:10px"><span style=\'color:var(--muted);font-size:0.62rem;margin-right:4px\'>'+x.codigo+'</span>'+(getCurName(x.codigo)||x.nombre)+'</td><td>'+fmtM(x.objetivo)+'</td><td>'+fmtM(x.facturacion)+'</td><td style="color:'+gc(x.cumplimiento)+';font-weight:700">'+x.cumplimiento.toFixed(1)+'%</td><td style="color:'+(x.cobertura===null||x.cobertura===undefined?'var(--muted)':gcCov(x.cobertura))+';font-weight:700">'+(x.cobertura===null||x.cobertura===undefined?'—':x.cobertura.toFixed(1)+'%')+'</td></tr>').join('');
+            const gSku = g.reduce((a,x)=>a+(x.cantidad_sku||0),0);
+            return '<tr style="background:var(--border)"><td colspan="3" style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">'+s+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td><td></td><td style="color:var(--text);font-weight:800">'+gSku+'</td></tr>'
+              + g.map(x=>'<tr class="hst-vendor-row" data-cod="'+x.codigo+'" data-nom="'+(getCurName(x.codigo)||x.nombre).replace(/"/g,'')+'"><td style="color:var(--text);padding-left:10px"><span style=\'color:var(--muted);font-size:0.62rem;margin-right:4px\'>'+x.codigo+'</span>'+(getCurName(x.codigo)||x.nombre)+'</td><td>'+fmtM(x.objetivo)+'</td><td>'+fmtM(x.facturacion)+'</td><td style="color:'+gc(x.cumplimiento)+';font-weight:700">'+x.cumplimiento.toFixed(1)+'%</td><td style="color:'+(x.cobertura===null||x.cobertura===undefined?'var(--muted)':gcCov(x.cobertura))+';font-weight:700">'+(x.cobertura===null||x.cobertura===undefined?'—':x.cobertura.toFixed(1)+'%')+'</td><td style="color:var(--text)">'+(x.cantidad_sku!=null?x.cantidad_sku:'—')+'</td></tr>').join('');
           }).join('')}
         </tbody>
       </table>
@@ -1691,6 +1742,7 @@ function showVendorChart(codigo, nombre) {
   const dataCumpl = [];
   const dataFact = [];
   const dataCov = [];
+  const dataSku = [];
   window.HIST.forEach(h => {
     const v = h.vendedores.find(x => x.codigo === codigo);
     if (v) {
@@ -1698,6 +1750,7 @@ function showVendorChart(codigo, nombre) {
       dataCumpl.push(+v.cumplimiento.toFixed(1));
       dataFact.push(v.facturacion);
       dataCov.push(v.cobertura !== null && v.cobertura !== undefined ? +v.cobertura.toFixed(1) : null);
+      dataSku.push(v.cantidad_sku !== null && v.cantidad_sku !== undefined ? v.cantidad_sku : null);
     }
   });
 
@@ -1705,6 +1758,7 @@ function showVendorChart(codigo, nombre) {
   document.getElementById('hst-chart-modal').classList.add('show');
   document.getElementById('hst-tgl-cumpl').checked = true;
   document.getElementById('hst-tgl-cov').checked = true;
+  document.getElementById('hst-tgl-sku').checked = true;
 
   const ctx = document.getElementById('hst-chart-canvas').getContext('2d');
   if (histChartInstance) histChartInstance.destroy();
@@ -1741,6 +1795,21 @@ function showVendorChart(codigo, nombre) {
         borderDash: [5,3],
         spanGaps: true,
         yAxisID: 'y1',
+      }, {
+        label: 'Cant. SKU',
+        data: dataSku,
+        borderColor: '#ffcc00',
+        backgroundColor: '#ffcc0022',
+        fill: false,
+        tension: 0.35,
+        pointRadius: 5,
+        pointBackgroundColor: '#ffcc00',
+        pointBorderColor: '#0a0b0f',
+        pointBorderWidth: 2,
+        borderWidth: 2.5,
+        borderDash: [2,2],
+        spanGaps: true,
+        yAxisID: 'y2',
       }]
     },
     options: {
@@ -1756,7 +1825,7 @@ function showVendorChart(codigo, nombre) {
           bodyColor: '#e8eaf0',
           padding: 10,
           callbacks: {
-            label: (ctx) => ctx.datasetIndex === 0 ? `Cumplimiento: ${ctx.parsed.y}%` : `Cobertura: ${ctx.parsed.y===null?'—':ctx.parsed.y+'%'}`,
+            label: (ctx) => ctx.datasetIndex === 0 ? `Cumplimiento: ${ctx.parsed.y}%` : ctx.datasetIndex === 1 ? `Cobertura: ${ctx.parsed.y===null?'—':ctx.parsed.y+'%'}` : `Cant. SKU: ${ctx.parsed.y===null?'—':ctx.parsed.y}`,
             afterLabel: (ctx) => ctx.datasetIndex === 0 ? `Facturado: ${fmtS(dataFact[ctx.dataIndex])}` : ''
           }
         }
@@ -1770,6 +1839,12 @@ function showVendorChart(codigo, nombre) {
         y1: {
           position: 'right',
           ticks: { color: '#5a6072', callback: v => v+'%' },
+          grid: { display: false },
+        },
+        y2: {
+          position: 'right',
+          display: false,
+          ticks: { color: '#5a6072' },
           grid: { display: false },
         },
         x: {
