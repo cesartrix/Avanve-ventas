@@ -212,6 +212,25 @@ tr.sup-group-sum td{
   </div>
 </div>
 
+<div class="hst-chart-modal" id="avc-chart-modal" onclick="if(event.target===this)closeAvcChart()">
+  <div class="hst-chart-box">
+    <div class="hst-chart-head">
+      <div class="hst-chart-title" id="avc-chart-title">Vendedor</div>
+      <button class="hst-chart-close" onclick="closeAvcChart()">✕</button>
+    </div>
+    <div class="hst-chart-toggles" style="display:flex;gap:16px;padding:0 4px 10px;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--text);cursor:pointer;">
+        <input type="checkbox" id="avc-tgl-venta" checked onchange="toggleAvcDataset(0,this.checked)" style="accent-color:#00d4aa"> Venta
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--text);cursor:pointer;">
+        <input type="checkbox" id="avc-tgl-cov" checked onchange="toggleAvcDataset(1,this.checked)" style="accent-color:#7b61ff"> Cobertura
+      </label>
+    </div>
+    <div class="hst-chart-canvas-wrap" id="avc-chart-status" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:0.75rem;text-align:center;padding:0 12px;">Cargando datos del mes...</div>
+    <div class="hst-chart-canvas-wrap" id="avc-chart-wrap" style="display:none"><canvas id="avc-chart-canvas"></canvas></div>
+  </div>
+</div>
+
 
 <header>
   <div class="logo" style="display:flex;align-items:center;gap:10px;padding:0">
@@ -931,7 +950,8 @@ function renderAv(){
       globalIdx++;
       const c=x.cumplimiento;
       const badge=c>=100?'<span class="badge bg2">✓ Ok</span>':c>=80?'<span class="badge by2">⚠ Cerca</span>':'<span class="badge br2">✗ Bajo</span>';
-      rows+=`<tr>
+      const nomEsc=String(x.nombre).replace(/'/g,"\\'");
+      rows+=`<tr class="hst-vendor-row" onclick="showDailyVendorChart('${x.codigo}','${nomEsc}')" title="Ver ventas y cobertura del mes por día">
         <td style="color:var(--muted)">${globalIdx}</td>
         <td style="color:var(--muted);font-size:0.62rem">${i+1}°</td>
         <td class="nc"><span style="font-family:'DM Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:5px">${x.codigo}</span>${x.nombre}</td>
@@ -947,7 +967,7 @@ function renderAv(){
         <td style="color:var(--text);font-weight:600">${x.cantidad_sku!=null?x.cantidad_sku:'—'}</td>
         <td>${badge}</td>
       </tr>`;
-      mcRows+=`<div class="mcard" style="border-left:3px solid ${col}">
+      mcRows+=`<div class="mcard" style="border-left:3px solid ${col};cursor:pointer" onclick="showDailyVendorChart('${x.codigo}','${nomEsc}')">
         <div class="mcnm"><span style="font-family:'DM Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:4px">${x.codigo}</span>${i+1}. ${x.nombre}</div>
         <div class="mcr"><span>Facturado</span><span>${fmt(x.facturacion)}</span></div>
         <div class="mcr"><span>Fact. Día</span><span>${x.facturacion_dia?fmt(x.facturacion_dia):"—"}</span></div>
@@ -1867,6 +1887,193 @@ function toggleHistDataset(idx, visible) {
   if (!histChartInstance) return;
   histChartInstance.setDatasetVisibility(idx, visible);
   histChartInstance.update();
+}
+
+// ===== AVANCE: VENDOR DAILY CHART (venta y cobertura del mes en curso) =====
+let avcChartInstance = null;
+let avcRequestToken = 0;
+
+async function showDailyVendorChart(codigo, nombre) {
+  nombre = getCurName(codigo) || nombre;
+  document.getElementById('avc-chart-title').textContent = `📈 ${nombre} — este mes`;
+  document.getElementById('avc-tgl-venta').checked = true;
+  document.getElementById('avc-tgl-cov').checked = true;
+  document.getElementById('avc-chart-modal').classList.add('show');
+
+  const statusEl = document.getElementById('avc-chart-status');
+  const wrapEl = document.getElementById('avc-chart-wrap');
+  wrapEl.style.display = 'none';
+  statusEl.style.display = 'flex';
+  statusEl.textContent = 'Cargando datos del mes...';
+
+  const myToken = ++avcRequestToken;
+
+  try {
+    const r = await fetch('/api/historial');
+    const d = await r.json();
+    const fechas = d.fechas || [];
+
+    const now = new Date();
+    const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    const mesFechas = fechas.filter(f => f.fecha.startsWith(ym)).sort((a,b) => a.fecha.localeCompare(b.fecha));
+
+    if (!mesFechas.length) {
+      if (myToken !== avcRequestToken) return;
+      statusEl.textContent = 'No hay registros históricos de este mes todavía.';
+      return;
+    }
+
+    const points = [];
+    for (const f of mesFechas) {
+      try {
+        const resp = await fetch(f.url + '?t=' + Date.now());
+        const ab = await resp.arrayBuffer();
+        const wb2 = XLSX.read(new Uint8Array(ab), {type:'array'});
+
+        let venta = null, cob = null;
+
+        const wsA = wb2.Sheets['AVANCE'];
+        if (wsA) {
+          const raw = XLSX.utils.sheet_to_json(wsA, {header:1, defval:null});
+          const hIdx = raw.findIndex(r2 => r2 && r2.some(c => String(c||'').toUpperCase().includes('OBJETIVO')));
+          if (hIdx > -1) {
+            const headers = raw[hIdx].map(h => String(h||'').trim().toUpperCase());
+            const ci2 = name => headers.findIndex(h => h.includes(name));
+            const hasSupCol2 = ci2('SUPERVISOR')>-1 && ci2('VENDEDOR')>-1 && ci2('SUPERVISOR')!==ci2('VENDEDOR');
+            const iVen2 = hasSupCol2 ? ci2('VENDEDOR') : (ci2('VENDEDOR/ SUPERVISOR')>-1 ? ci2('VENDEDOR/ SUPERVISOR') : 0);
+            const iFactDia2 = ci2('FACTURACION DEL DIA');
+            for (let i=hIdx+1; i<raw.length; i++) {
+              const row = raw[i]; if (!row) continue;
+              const venRaw = row[iVen2]; if (isBlank(venRaw)) continue;
+              const m = String(venRaw).trim().match(/^(\d+)\s*-\s*(.+)/);
+              if (!m || m[1] !== codigo) continue;
+              venta = n(row[iFactDia2]);
+              break;
+            }
+          }
+        }
+
+        const wsC = wb2.Sheets['COBERTURA'];
+        if (wsC) {
+          const rawC = XLSX.utils.sheet_to_json(wsC, {header:1, defval:null});
+          let chIdx = rawC.findIndex(r2 => r2 && r2.some(c => String(c||'').toUpperCase().includes('COBERTURA TOTAL')));
+          if (chIdx === -1) chIdx = 0;
+          const ch = rawC[chIdx].map(h => String(h||'').trim().toUpperCase());
+          const ciC2 = name => ch.findIndex(h => h.includes(name));
+          const hasCobSup2 = ciC2('SUPERVISOR')>-1 && ciC2('VENDEDOR')>-1;
+          const iCVen2 = hasCobSup2 ? ciC2('VENDEDOR') : (ciC2('VENDEDOR/ SUPERVISOR')>-1 ? ciC2('VENDEDOR/ SUPERVISOR') : 1);
+          const iCOB2 = ciC2('COBERTURA TOTAL');
+          for (let i=chIdx+1; i<rawC.length; i++) {
+            const row = rawC[i]; if (!row) continue;
+            const venRaw = row[iCVen2]; if (isBlank(venRaw)) continue;
+            const m = String(venRaw).trim().match(/^(\d+)\s*-\s*(.+)/);
+            if (!m || m[1] !== codigo) continue;
+            cob = +(n(row[iCOB2]) * 100).toFixed(1);
+            break;
+          }
+        }
+
+        points.push({ fecha: f.fecha, label: formatFecha(f.fecha), venta, cob });
+      } catch(_) {}
+    }
+
+    if (myToken !== avcRequestToken) return; // el usuario abrió otro vendedor mientras cargaba
+
+    if (!points.length) {
+      statusEl.textContent = 'No se pudieron leer los archivos históricos de este mes.';
+      return;
+    }
+
+    statusEl.style.display = 'none';
+    wrapEl.style.display = 'block';
+
+    const ctx = document.getElementById('avc-chart-canvas').getContext('2d');
+    if (avcChartInstance) avcChartInstance.destroy();
+
+    avcChartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: points.map(p => p.label),
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Venta del día',
+            data: points.map(p => p.venta),
+            backgroundColor: '#00d4aa99',
+            borderColor: '#00d4aa',
+            borderWidth: 1,
+            borderRadius: 4,
+            yAxisID: 'y',
+          },
+          {
+            type: 'line',
+            label: 'Cobertura %',
+            data: points.map(p => p.cob),
+            borderColor: '#7b61ff',
+            backgroundColor: '#7b61ff22',
+            fill: false,
+            tension: 0.35,
+            pointRadius: 4,
+            pointBackgroundColor: '#7b61ff',
+            pointBorderColor: '#0a0b0f',
+            pointBorderWidth: 1,
+            borderWidth: 2.5,
+            spanGaps: true,
+            yAxisID: 'y1',
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#12141a',
+            borderColor: '#1e2130',
+            borderWidth: 1,
+            titleColor: '#e8eaf0',
+            bodyColor: '#e8eaf0',
+            padding: 10,
+            callbacks: {
+              label: c => c.datasetIndex === 0
+                ? ` Venta: ${c.parsed.y===null?'—':fmt(c.parsed.y)}`
+                : ` Cobertura: ${c.parsed.y===null?'—':c.parsed.y+'%'}`
+            }
+          }
+        },
+        scales: {
+          y: {
+            position: 'left',
+            ticks: { color: '#5a6072', callback: v => fmtS(v) },
+            grid: { color: '#1e2130' },
+          },
+          y1: {
+            position: 'right',
+            ticks: { color: '#5a6072', callback: v => v+'%' },
+            grid: { display: false },
+          },
+          x: {
+            ticks: { color: '#5a6072', font: { size: 11 }, maxRotation: 40 },
+            grid: { display: false },
+          }
+        }
+      }
+    });
+  } catch(e) {
+    if (myToken !== avcRequestToken) return;
+    statusEl.textContent = 'Error al cargar historial: ' + e.message;
+  }
+}
+
+function closeAvcChart() {
+  document.getElementById('avc-chart-modal').classList.remove('show');
+}
+
+function toggleAvcDataset(idx, visible) {
+  if (!avcChartInstance) return;
+  avcChartInstance.setDatasetVisibility(idx, visible);
+  avcChartInstance.update();
 }
 
 // ===== INIT =====
