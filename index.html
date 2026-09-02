@@ -149,6 +149,8 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'Roboto Mono',monospace;
 .horas-card-sub{font-size:0.65rem;color:var(--muted);margin-bottom:12px;}
 .horas-chart-wrap{position:relative;height:320px;}
 .hst-vendor-row:hover{background:var(--bg);}
+.hst-vendor-row.sel{background:rgba(0,212,170,0.10);}
+.mcard.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
 .hst-chart-modal{display:none;position:fixed;inset:0;background:#000000cc;z-index:1000;align-items:center;justify-content:center;padding:20px;}
 .hst-chart-modal.show{display:flex;}
 .hst-chart-box{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:560px;width:100%;max-height:80vh;overflow:auto;}
@@ -281,7 +283,7 @@ tr.sup-group-sum td{
     <button class="stab active" onclick="showSec('avance',this)">📈 Avance</button>
     <button class="stab" onclick="showSec('cobertura',this)">🗂 Cobertura</button>
     <button class="stab" onclick="showSec('historico',this)">📅 Histórico</button>
-    <button class="stab" onclick="showSec('proveedores',this)">🏭 Proveedores</button>
+    <button class="stab" onclick="showSec('sku',this)">📦 SKU</button>
     <button class="stab" onclick="showSec('horas',this)">⏱ Horas</button>
     <button class="stab" onclick="showSec('trazabilidad',this)">📈 Trazabilidad</button>
     <button class="stab" onclick="showSec('ranking',this)">🏆 Ranking</button>
@@ -349,19 +351,17 @@ tr.sup-group-sum td{
         <div class="mc" id="mc-cob"></div>
       </div>
     </div>
-    <div class="pg" id="pg-proveedores">
-      <div class="panel">
-        <div class="ptitle"><span class="dot"></span>Evolución por proveedor</div>
-        <div id="vxp-nosheet" style="display:none;text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">Este archivo no tiene la hoja "Venta x Proveedor". Subí un Excel que la incluya para ver esta pestaña.</div>
-        <div id="vxp-body">
-          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
-            <select class="traz-select" id="vxp-prov" style="width:auto;min-width:200px;margin-bottom:0;"></select>
-            <select class="traz-select" id="vxp-vend" style="width:auto;min-width:220px;margin-bottom:0;"></select>
-          </div>
-          <div class="kstrip" id="vxp-stats"></div>
-          <div style="position:relative;height:280px;"><canvas id="vxpChart"></canvas></div>
-          <div id="vxp-legend" style="display:flex;gap:16px;margin-top:10px;font-size:0.68rem;color:var(--muted)"></div>
-          <div id="vxp-empty" style="display:none;text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">Sin datos de este proveedor para el supervisor seleccionado.</div>
+    <div class="pg" id="pg-sku">
+      <div class="g2" style="align-items:start;">
+        <div class="panel">
+          <div class="ptitle"><span class="dot"></span>Cantidad de SKU por vendedor</div>
+          <div class="searchbar"><input id="ssku" placeholder="🔍 Buscar vendedor..." oninput="renderSku()"></div>
+          <div class="ts hm"><table><thead><tr><th>#</th><th>Pos.</th><th>Vendedor</th><th>Cant. SKU</th></tr></thead><tbody id="tb-sku"></tbody></table></div>
+          <div class="mc" id="mc-sku"></div>
+        </div>
+        <div class="panel">
+          <div class="ptitle"><span class="dot o"></span>Desglose por proveedor</div>
+          <div id="sku-detail"><div style="text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">Elegí un vendedor de la tabla para ver el desglose de SKU por proveedor.</div></div>
         </div>
       </div>
     </div>
@@ -402,7 +402,7 @@ const SC = {'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35',
 const SL = {'MARTIN PREVENTA':'Martín Preventa','MARTIN':'Martín','CRISTIAN':'Cristian','GONZALO':'Gonzalo','MAXI':'Maxi','SIN SUPERVISOR':'Sin sup.'};
 const SUPS = Object.keys(SC);
 
-let A=[], COB=[], cur='TODOS', CH={};
+let A=[], COB=[], cur='TODOS', CH={}, skuSelectedCod=null;
 
 const fmt=v=>'$'+Math.round(v).toLocaleString('es-AR');
 const fmtS=v=>'$'+(v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v.toFixed(0));
@@ -667,48 +667,35 @@ function parseWB(wb, fname) {
       }
     }
 
-    // ---- VENTA X PROVEEDOR ----
-    window.VXP = { periodos: [], data: {} };
-    if (wb.SheetNames.includes('Venta x Proveedor')) {
-      const vxpWS = wb.Sheets['Venta x Proveedor'];
-      const vxpRaw = XLSX.utils.sheet_to_json(vxpWS, {header:1, defval:null});
-      const periodosSet = [];
-      const rawVxp = {};
-      const vendNombre = {};
-      for (let i=1; i<vxpRaw.length; i++) {
-        const row = vxpRaw[i];
+    // ---- BASE SKU POR PROVEEDOR ----
+    // Hoja "Base SKU": una fila por SKU vendido en el período. Col E = código de
+    // vendedor, Col AN = proveedor del artículo, Col AM = cantidad (siempre 1 por
+    // fila; sumada por vendedor reproduce exactamente los totales de "Cantidad Sku").
+    window.SKU_PROV = {};
+    if (wb.SheetNames.includes('Base SKU')) {
+      const skuProvWS = wb.Sheets['Base SKU'];
+      const skuProvRaw = XLSX.utils.sheet_to_json(skuProvWS, {header:1, defval:null});
+      const acc = {}; // { codigoVendedor: { proveedor: cantidad } }
+      for (let i = 1; i < skuProvRaw.length; i++) {
+        const row = skuProvRaw[i];
         if (!row) continue;
-        const per = row[0], cod = row[1], vnom = row[2], prov = row[3], imp = row[5];
-        if (isBlank(per) || isBlank(prov)) continue;
-        const codStr = String(cod);
-        if (codStr === '0') continue;
-        const nombre = String(vnom||'').trim();
-        if (nombre.toUpperCase() === 'MOSTRADOR') continue;
-        if (!periodosSet.includes(per)) periodosSet.push(per);
-        const provName = String(prov).trim();
-        rawVxp[provName] = rawVxp[provName] || {};
-        rawVxp[provName][per] = rawVxp[provName][per] || {};
-        rawVxp[provName][per][codStr] = (rawVxp[provName][per][codStr] || 0) + n(imp);
-        vendNombre[provName] = vendNombre[provName] || {};
-        vendNombre[provName][codStr] = nombre;
+        const codRaw = row[4];    // Col E
+        const cant = n(row[38]);  // Col AM
+        const provRaw = row[39];  // Col AN
+        if (isBlank(codRaw) || isBlank(provRaw)) continue;
+        const codStr = String(parseInt(codRaw, 10));
+        if (!codStr || codStr === 'NaN') continue;
+        const provName = String(provRaw).trim();
+        acc[codStr] = acc[codStr] || {};
+        acc[codStr][provName] = (acc[codStr][provName] || 0) + cant;
       }
-      const periodosOrd = periodosSet.slice().sort((a,b) => {
-        const ma = String(a).match(/\((\d+)\)/), mb = String(b).match(/\((\d+)\)/);
-        return (ma?parseInt(ma[1],10):0) - (mb?parseInt(mb[1],10):0);
+      const out = {};
+      Object.keys(acc).forEach(cod => {
+        out[cod] = Object.entries(acc[cod])
+          .map(([proveedor, cantidad]) => ({ proveedor, cantidad: Math.round(cantidad) }))
+          .sort((a, b) => b.cantidad - a.cantidad);
       });
-      const periodosLabel = periodosOrd.map(p => String(p).replace(/^\(\d+\)\s*/,'').replace(/\s*\d{4}$/,''));
-      const dataVxp = {};
-      Object.keys(rawVxp).forEach(prov => {
-        dataVxp[prov] = {};
-        const codes = new Set();
-        periodosOrd.forEach(per => Object.keys(rawVxp[prov][per]||{}).forEach(c=>codes.add(c)));
-        codes.forEach(cod => {
-          const vals = periodosOrd.map(per => Math.round((rawVxp[prov][per]||{})[cod] || 0));
-          if (vals.every(v=>v===0)) return;
-          dataVxp[prov][cod] = { nombre: vendNombre[prov][cod] || cod, valores: vals };
-        });
-      });
-      window.VXP = { periodos: periodosLabel, data: dataVxp };
+      window.SKU_PROV = out;
     }
 
     // ---- Update UI ----
@@ -797,7 +784,6 @@ function parseWB(wb, fname) {
       return ai - bi;
     });
     buildHistorico();
-    buildVxpProveedores();
 
     // ===== READ SUPERVISOR SUBTOTALS FROM EXCEL =====
     // Subtotal rows: both supervisor and vendor cols are empty, but objetivo col has value
@@ -1065,120 +1051,82 @@ function renderCob(){
 function buildRanking(){const d=filt(A).sort((a,b)=>b.cumplimiento-a.cumplimiento);const m=['🥇','🥈','🥉','4️⃣','5️⃣'];document.getElementById('rtop').innerHTML=d.slice(0,5).map((x,i)=>`<div class="sr"><span class="sn">${m[i]} <span style="color:var(--muted);font-size:0.72rem">${x.codigo}</span> ${x.nombre} ${tag(x.supervisor,true)}</span><span class="sv">${x.cumplimiento}%</span></div>`).join('');document.getElementById('rbot').innerHTML=d.slice(-5).reverse().map(x=>`<div class="sr"><span class="sn" style="color:#ff4545"><span style="color:#ff454599;font-size:0.72rem">${x.codigo}</span> ${x.nombre} ${tag(x.supervisor,true)}</span><span style="font-family:'Roboto Mono',monospace;color:#ff4545">${x.cumplimiento}%</span></div>`).join('');}
 function buildSupCards(){document.getElementById('supcards').innerHTML=SUPS.map(s=>{const d=A.filter(x=>x.supervisor===s);if(!d.length)return'';const sub2=(window.SUP_SUBTOTALS||{})[s];const tf=sub2?sub2.facturacion:d.reduce((a,x)=>a+x.facturacion,0),to=sub2?sub2.objetivo:d.reduce((a,x)=>a+x.objetivo,0),tp2=sub2?sub2.proyeccion:d.reduce((a,x)=>a+x.proyeccion,0),avgC=(to>0?tp2/to*100:0).toFixed(1),ok=d.filter(x=>x.cumplimiento>=100).length,col=sc(s);return`<div class="scard" style="border-left-color:${col}"><div class="scnm" style="color:${col}">${sl(s)}</div><div class="scr"><span>Vendedores</span><span>${d.length}</span></div><div class="scr"><span>Facturado</span><span>${fmt(tf)}</span></div><div class="scr"><span>Objetivo</span><span>${fmt(to)}</span></div><div class="scr"><span>Cumpl. prom.</span><span style="color:${gc(+avgC)}">${avgC}%</span></div><div class="scr"><span>En objetivo</span><span style="color:#00d4aa">${ok}/${d.length}</span></div></div>`;}).join('');}
 
-function refresh(){buildKpiAv();buildKpiCob();buildCC();buildCF();buildCCob();buildCCCC();buildDist();buildCSF();buildCSC();renderAv();renderCob();buildRanking();buildSupCards();refreshVxp();}
+function refresh(){buildKpiAv();buildKpiCob();buildCC();buildCF();buildCCob();buildCCCC();buildDist();buildCSF();buildCSC();renderAv();renderCob();buildRanking();buildSupCards();renderSku();}
 
-// ===== VENTA X PROVEEDOR: UI =====
-function buildVxpProveedores() {
-  const sel = document.getElementById('vxp-prov');
-  const noSheetEl = document.getElementById('vxp-nosheet');
-  const bodyEl = document.getElementById('vxp-body');
-  if (!sel || !window.VXP || !window.VXP.data) return;
-  const provs = Object.keys(window.VXP.data).sort((a,b)=>a.localeCompare(b));
-  if (!provs.length) {
-    if (noSheetEl) noSheetEl.style.display = 'block';
-    if (bodyEl) bodyEl.style.display = 'none';
-    return;
-  }
-  if (noSheetEl) noSheetEl.style.display = 'none';
-  if (bodyEl) bodyEl.style.display = 'block';
-  const keep = sel.value;
-  sel.innerHTML = provs.map(p => `<option value="${p}">${p}</option>`).join('');
-  if (provs.includes(keep)) sel.value = keep;
-  sel.onchange = () => { populateVxpVendedores(sel.value); renderVxp(); };
-  document.getElementById('vxp-vend').onchange = renderVxp;
-  populateVxpVendedores(sel.value);
-}
-
-function populateVxpVendedores(prov) {
-  const vendSel = document.getElementById('vxp-vend');
-  if (!vendSel || !window.VXP || !window.VXP.data[prov]) { if(vendSel) vendSel.innerHTML=''; return; }
-  const keep = vendSel.value;
-  const entries = Object.keys(window.VXP.data[prov]).map(cod => {
-    const v = window.VXP.data[prov][cod];
-    const sup = getCurSup(cod) || 'SIN SUPERVISOR';
-    return { cod, nombre: getCurName(cod) || v.nombre, supervisor: sup, total: v.valores.reduce((a,b)=>a+b,0) };
-  }).filter(x => cur === 'TODOS' || x.supervisor === cur)
-    .sort((a,b) => b.total - a.total);
-  vendSel.innerHTML = entries.map(x => `<option value="${x.cod}">${x.nombre}</option>`).join('');
-  if (entries.some(x => x.cod === keep)) vendSel.value = keep;
-}
-
-function refreshVxp() {
-  if (!document.getElementById('vxp-prov')) return;
-  populateVxpVendedores(document.getElementById('vxp-prov').value);
-  renderVxp();
-}
-
-let vxpChartInstance = null;
-function renderVxp() {
-  const provSel = document.getElementById('vxp-prov');
-  const vendSel = document.getElementById('vxp-vend');
-  if (!provSel || !vendSel || !window.VXP) return;
-  const prov = provSel.value;
-  const cod = vendSel.value;
-  const provData = window.VXP.data[prov];
-  const emptyEl = document.getElementById('vxp-empty');
-  const wrap = document.getElementById('vxpChart').parentElement;
-  if (!provData || !cod || !provData[cod]) {
-    if (emptyEl) emptyEl.style.display = 'block';
-    if (wrap) wrap.style.display = 'none';
-    document.getElementById('vxp-stats').innerHTML = '';
-    document.getElementById('vxp-legend').innerHTML = '';
-    return;
-  }
-  if (emptyEl) emptyEl.style.display = 'none';
-  if (wrap) wrap.style.display = 'block';
-
-  const periodos = window.VXP.periodos;
-  const vendVals = provData[cod].valores;
-  const nombre = getCurName(cod) || provData[cod].nombre;
-  const totalVals = periodos.map((_,i) => Object.values(provData).reduce((s,v)=>s+v.valores[i],0));
-
-  const totalAcum = vendVals.reduce((a,b)=>a+b,0);
-  const totalProvAcum = totalVals.reduce((a,b)=>a+b,0);
-  const share = totalProvAcum ? (totalAcum/totalProvAcum*100) : 0;
-  const last = vendVals[vendVals.length-1] || 0;
-  const prev = vendVals[vendVals.length-2] || 0;
-  const delta = prev ? ((last-prev)/prev*100) : 0;
-
-  document.getElementById('vxp-stats').innerHTML = `
-    <div class="kpi"><div class="kl">Acumulado</div><div class="kv">${fmtS(totalAcum)}</div><div class="ks">${periodos[0]}-${periodos[periodos.length-1]}</div></div>
-    <div class="kpi o"><div class="kl">% del proveedor</div><div class="kv">${share.toFixed(1)}%</div><div class="ks">sobre el total</div></div>
-    <div class="kpi ${delta>=0?'':'y'}"><div class="kl">Var. vs mes ant.</div><div class="kv" style="color:${delta>=0?'var(--accent)':'var(--danger)'}">${delta>=0?'+':''}${delta.toFixed(1)}%</div><div class="ks">último período</div></div>`;
-
-  document.getElementById('vxp-legend').innerHTML = `
-    <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:2px;background:var(--accent3);display:inline-block;"></span>${nombre}</span>
-    <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:0;border-top:1.5px dashed var(--muted);display:inline-block;"></span>Total ${prov} (referencia)</span>`;
-
-  const ctx = document.getElementById('vxpChart').getContext('2d');
-  if (vxpChartInstance) vxpChartInstance.destroy();
-  vxpChartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: periodos,
-      datasets: [
-        { label: nombre, data: vendVals, borderColor: '#7b61ff', backgroundColor: '#7b61ff22', borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#7b61ff', pointBorderColor: '#0a0b0f', pointBorderWidth: 2, tension: 0.3, fill: true, yAxisID: 'y' },
-        { label: 'Total ' + prov, data: totalVals, borderColor: '#5a6072', backgroundColor: 'transparent', borderWidth: 1.5, borderDash: [5,4], pointRadius: 0, tension: 0.3, fill: false, yAxisID: 'y1' }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#12141a', borderColor: '#1e2130', borderWidth: 1,
-          titleColor: '#e8eaf0', bodyColor: '#e8eaf0', padding: 10,
-          callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtS(ctx.parsed.y) }
-        }
-      },
-      scales: {
-        y: { position: 'left', ticks: { color: '#5a6072', callback: v => fmtS(v) }, grid: { color: '#1e2130' } },
-        y1: { position: 'right', ticks: { color: '#5a6072', callback: v => fmtS(v) }, grid: { display: false } },
-        x: { ticks: { color: '#5a6072' }, grid: { display: false } }
-      }
-    }
+// ===== SKU POR VENDEDOR / PROVEEDOR: UI =====
+function renderSku(){
+  const tbEl = document.getElementById('tb-sku');
+  if (!tbEl) return; // la pestaña SKU no está en el DOM (p. ej. dentro del export standalone)
+  const q = (document.getElementById('ssku')?.value || '').toLowerCase();
+  const base = filt(A).filter(x => x.nombre.toLowerCase().includes(q));
+  const supOrder = cur === 'TODOS' ? [...SUPS] : [cur];
+  let rows = '', mcRows = '', globalIdx = 0;
+  supOrder.forEach(sup => {
+    const group = base.filter(x => x.supervisor === sup).sort((a,b) => (b.cantidad_sku||0) - (a.cantidad_sku||0));
+    if (!group.length) return;
+    const col = sc(sup);
+    rows += `<tr class="sup-group-hdr"><td colspan="4" style="color:${col};border-bottom-color:${col}"><span style="display:inline-flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}<span style="font-family:'Roboto Mono',monospace;font-size:0.6rem;font-weight:400;color:var(--muted)">${group.length} vendedores</span></span></td></tr>`;
+    mcRows += `<div style="display:flex;align-items:center;gap:7px;padding:8px 0 4px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${col}"><span style="width:7px;height:7px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}</div>`;
+    group.forEach((x,i) => {
+      globalIdx++;
+      const sel = skuSelectedCod === x.codigo ? ' sel' : '';
+      rows += `<tr class="hst-vendor-row${sel}" onclick="selectSkuVendor('${x.codigo}')" title="Ver desglose por proveedor">
+        <td style="color:var(--muted)">${globalIdx}</td>
+        <td style="color:var(--muted);font-size:0.62rem">${i+1}°</td>
+        <td class="nc"><span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:5px">${x.codigo}</span>${x.nombre}</td>
+        <td style="color:var(--text);font-weight:700">${x.cantidad_sku!=null?x.cantidad_sku:'—'}</td>
+      </tr>`;
+      mcRows += `<div class="mcard${sel}" style="border-left:3px solid ${col};cursor:pointer" onclick="selectSkuVendor('${x.codigo}')">
+        <div class="mcnm"><span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:4px">${x.codigo}</span>${i+1}. ${x.nombre}</div>
+        <div class="mcr"><span>Cant. SKU</span><span>${x.cantidad_sku!=null?x.cantidad_sku:'—'}</span></div>
+      </div>`;
+    });
   });
+  tbEl.innerHTML = rows;
+  document.getElementById('mc-sku').innerHTML = mcRows;
+  if (skuSelectedCod && !base.some(x => x.codigo === skuSelectedCod)) skuSelectedCod = null;
+  renderSkuDetail();
+}
+
+function selectSkuVendor(cod){
+  skuSelectedCod = (skuSelectedCod === cod) ? null : cod;
+  renderSku();
+}
+
+function renderSkuDetail(){
+  const el = document.getElementById('sku-detail');
+  if (!el) return;
+  if (!skuSelectedCod) {
+    el.innerHTML = `<div style="text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">Elegí un vendedor de la tabla para ver el desglose de SKU por proveedor.</div>`;
+    return;
+  }
+  const v = A.find(x => x.codigo === skuSelectedCod);
+  const nombre = v ? v.nombre : (getCurName(skuSelectedCod) || skuSelectedCod);
+  const sup = v ? v.supervisor : (getCurSup(skuSelectedCod) || 'SIN SUPERVISOR');
+  const col = sc(sup);
+  const desglose = (window.SKU_PROV && window.SKU_PROV[skuSelectedCod]) || [];
+  const header = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-family:'Roboto Mono',monospace;font-size:0.65rem;color:var(--muted)">${skuSelectedCod}</span>
+      <span style="font-weight:700">${nombre}</span>
+      ${tag(sup)}
+    </div>`;
+  if (!desglose.length) {
+    el.innerHTML = header + `</div><div style="text-align:center;color:var(--muted);padding:20px;font-size:0.78rem;">Sin datos de proveedor para este vendedor en la hoja "Base SKU".</div>`;
+    return;
+  }
+  const total = desglose.reduce((s,d) => s + d.cantidad, 0);
+  const max = desglose[0].cantidad || 1;
+  const rows = desglose.map(d => `
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.76rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${d.proveedor}</div>
+        <div class="mbw" style="margin-top:4px;"><div class="mbbg"><div class="mbf" style="width:${Math.max(4,d.cantidad*100/max)}%;background:${col}"></div></div></div>
+      </div>
+      <div style="font-family:'Roboto Mono',monospace;font-weight:700;color:var(--text);min-width:38px;text-align:right;">${d.cantidad}</div>
+      <div style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);min-width:38px;text-align:right;">${total?(d.cantidad*100/total).toFixed(0):0}%</div>
+    </div>`).join('');
+  el.innerHTML = header + `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted)">${desglose.length} proveedores · <span style="color:var(--text);font-weight:700">${total}</span> SKU</div></div><div>${rows}</div>`;
 }
 
 // ===== EXPORT =====
