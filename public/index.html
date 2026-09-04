@@ -6,6 +6,8 @@
 <title>Dashboard Ventas — Chess ERP</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500&display=swap');
 :root{--bg:#0a0c10;--surface:#111318;--card:#161920;--border:#1e2330;--accent:#00d4aa;--accent2:#ff6b35;--accent3:#7b61ff;--warn:#ffcc00;--danger:#ff4545;--text:#e8eaf0;--muted:#5a6072;}
@@ -26,6 +28,10 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .ubtn{display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#000;font-family:'Roboto',sans-serif;font-size:0.72rem;font-weight:800;padding:7px 13px;border-radius:9px;cursor:pointer;border:none;white-space:nowrap;transition:background 0.2s;}
 .ubtn:hover{background:#00e8bb;}
 .ubtn input{display:none;}
+
+.sku-pdf-btn{display:inline-flex;align-items:center;gap:5px;background:var(--accent3);color:#fff;font-family:'Roboto',sans-serif;font-size:0.68rem;font-weight:800;padding:6px 11px;border-radius:8px;cursor:pointer;border:none;white-space:nowrap;transition:background 0.2s;}
+.sku-pdf-btn:hover{background:#9583ff;}
+.sku-pdf-btn:disabled{opacity:0.5;cursor:not-allowed;}
 
 /* SPLASH */
 #splash{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;padding:24px;text-align:center;}
@@ -669,25 +675,41 @@ function parseWB(wb, fname) {
 
     // ---- BASE SKU POR PROVEEDOR ----
     // Hoja "Base SKU": una fila por SKU vendido en el período. Col E = código de
-    // vendedor, Col AN = proveedor del artículo, Col AM = cantidad (siempre 1 por
-    // fila; sumada por vendedor reproduce exactamente los totales de "Cantidad Sku").
+    // vendedor, Col H = código de artículo, Col I = descripción del artículo,
+    // Col AN = proveedor del artículo, Col AM = cantidad (siempre 1 por fila;
+    // sumada por vendedor reproduce exactamente los totales de "Cantidad Sku").
     window.SKU_PROV = {};
+    window.SKU_PROV_DETAIL = {};
     if (wb.SheetNames.includes('Base SKU')) {
       const skuProvWS = wb.Sheets['Base SKU'];
       const skuProvRaw = XLSX.utils.sheet_to_json(skuProvWS, {header:1, defval:null});
-      const acc = {}; // { codigoVendedor: { proveedor: cantidad } }
+      const acc = {};       // { codigoVendedor: { proveedor: cantidad } }
+      const accArt = {};    // { codigoVendedor: { proveedor: { codArt: {codigo,descripcion,cantidad} } } }
       for (let i = 1; i < skuProvRaw.length; i++) {
         const row = skuProvRaw[i];
         if (!row) continue;
-        const codRaw = row[4];    // Col E
-        const cant = n(row[38]);  // Col AM
-        const provRaw = row[39];  // Col AN
+        const codRaw = row[4];     // Col E
+        const codArtRaw = row[7];  // Col H
+        const descArtRaw = row[8]; // Col I
+        const cant = n(row[38]);   // Col AM
+        const provRaw = row[39];   // Col AN
         if (isBlank(codRaw) || isBlank(provRaw)) continue;
         const codStr = String(parseInt(codRaw, 10));
         if (!codStr || codStr === 'NaN') continue;
         const provName = String(provRaw).trim();
         acc[codStr] = acc[codStr] || {};
         acc[codStr][provName] = (acc[codStr][provName] || 0) + cant;
+
+        const codArtStr = isBlank(codArtRaw) ? '' : String(codArtRaw).trim();
+        const descArtStr = isBlank(descArtRaw) ? '(sin descripción)' : String(descArtRaw).trim();
+        const artKey = codArtStr || descArtStr;
+        if (artKey) {
+          accArt[codStr] = accArt[codStr] || {};
+          accArt[codStr][provName] = accArt[codStr][provName] || {};
+          const bucket = accArt[codStr][provName];
+          bucket[artKey] = bucket[artKey] || { codigo: codArtStr, descripcion: descArtStr, cantidad: 0 };
+          bucket[artKey].cantidad += cant;
+        }
       }
       const out = {};
       Object.keys(acc).forEach(cod => {
@@ -696,6 +718,20 @@ function parseWB(wb, fname) {
           .sort((a, b) => b.cantidad - a.cantidad);
       });
       window.SKU_PROV = out;
+
+      const outDetail = {};
+      Object.keys(accArt).forEach(cod => {
+        const provList = Object.entries(accArt[cod]).map(([proveedor, artMap]) => {
+          const articulos = Object.values(artMap)
+            .map(a => ({ codigo: a.codigo, descripcion: a.descripcion, cantidad: Math.round(a.cantidad) }))
+            .sort((a, b) => b.cantidad - a.cantidad);
+          const cantidad = articulos.reduce((s, a) => s + a.cantidad, 0);
+          return { proveedor, cantidad, articulos };
+        });
+        provList.sort((a, b) => b.cantidad - a.cantidad);
+        outDetail[cod] = provList;
+      });
+      window.SKU_PROV_DETAIL = outDetail;
     }
 
     // ---- Update UI ----
@@ -1105,12 +1141,16 @@ function renderSkuDetail(){
   const sup = v ? v.supervisor : (getCurSup(skuSelectedCod) || 'SIN SUPERVISOR');
   const col = sc(sup);
   const desglose = (window.SKU_PROV && window.SKU_PROV[skuSelectedCod]) || [];
+  const pdfBtn = desglose.length
+    ? `<button class="sku-pdf-btn" onclick="exportSkuProveedorPDF('${skuSelectedCod}')" title="Exportar el detalle de artículos por proveedor en PDF">⬇ Exportar PDF</button>`
+    : '';
   const header = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
     <div style="display:flex;align-items:center;gap:8px;">
       <span style="font-family:'Roboto Mono',monospace;font-size:0.65rem;color:var(--muted)">${skuSelectedCod}</span>
       <span style="font-weight:700">${nombre}</span>
       ${tag(sup)}
-    </div>`;
+    </div>
+    ${pdfBtn}`;
   if (!desglose.length) {
     el.innerHTML = header + `</div><div style="text-align:center;color:var(--muted);padding:20px;font-size:0.78rem;">Sin datos de proveedor para este vendedor en la hoja "Base SKU".</div>`;
     return;
@@ -1127,6 +1167,102 @@ function renderSkuDetail(){
       <div style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);min-width:38px;text-align:right;">${total?(d.cantidad*100/total).toFixed(0):0}%</div>
     </div>`).join('');
   el.innerHTML = header + `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted)">${desglose.length} proveedores · <span style="color:var(--text);font-weight:700">${total}</span> SKU</div></div><div>${rows}</div>`;
+}
+
+// Exporta a PDF el detalle de artículos por proveedor del vendedor seleccionado
+// en la pestaña SKU. Usa window.SKU_PROV_DETAIL[codigo], armado desde la hoja
+// "Base SKU" (Col H = código artículo, Col I = descripción, Col AN = proveedor,
+// Col AM = cantidad), agrupado por proveedor con el detalle de artículos de cada uno.
+function exportSkuProveedorPDF(cod){
+  if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+    alert('No se pudo cargar la librería de PDF. Revisá tu conexión e intentá de nuevo.');
+    return;
+  }
+  const detalle = (window.SKU_PROV_DETAIL && window.SKU_PROV_DETAIL[cod]) || [];
+  if (!detalle.length) {
+    alert('No hay detalle de artículos por proveedor para este vendedor.');
+    return;
+  }
+  const v = A.find(x => x.codigo === cod);
+  const nombre = v ? v.nombre : (getCurName(cod) || cod);
+  const sup = v ? v.supervisor : (getCurSup(cod) || 'SIN SUPERVISOR');
+  const totalSku = detalle.reduce((s, p) => s + p.cantidad, 0);
+  const today = new Date();
+  const fechaStr = today.toLocaleDateString('es-AR');
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const marginX = 40;
+  let y = 46;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.setTextColor(20, 20, 20);
+  doc.text('Detalle de artículos por proveedor', marginX, y);
+  y += 20;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10.5);
+  doc.setTextColor(70, 70, 70);
+  doc.text(`Vendedor: ${nombre}  (cód. ${cod})`, marginX, y);
+  y += 14;
+  doc.text(`Supervisor: ${sup}`, marginX, y);
+  y += 14;
+  doc.text(`${detalle.length} proveedores · ${totalSku} SKU en total · Generado ${fechaStr}`, marginX, y);
+  y += 10;
+
+  const colWidths = { codigo: 65, cantidad: 60 };
+  colWidths.desc = pageW - marginX*2 - colWidths.codigo - colWidths.cantidad;
+
+  detalle.forEach(prov => {
+    const body = prov.articulos.map(a => [a.codigo || '—', a.descripcion, String(a.cantidad)]);
+    doc.autoTable({
+      startY: y + 12,
+      margin: { left: marginX, right: marginX },
+      head: [
+        [{ content: `${prov.proveedor}  —  ${prov.cantidad} SKU (${prov.articulos.length} artículos)`, colSpan: 3 }],
+        ['Código', 'Descripción', 'Cantidad']
+      ],
+      body: body,
+      theme: 'grid',
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 4, textColor: [30,30,30] },
+      columnStyles: {
+        0: { cellWidth: colWidths.codigo },
+        1: { cellWidth: colWidths.desc },
+        2: { cellWidth: colWidths.cantidad, halign: 'right' }
+      },
+      didParseCell: function(data){
+        if (data.section === 'head') {
+          if (data.row.index === 0) {
+            data.cell.styles.fillColor = [123, 97, 255];
+            data.cell.styles.textColor = [255, 255, 255];
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fontSize = 9.5;
+            data.cell.styles.halign = 'left';
+          } else {
+            data.cell.styles.fillColor = [230, 228, 245];
+            data.cell.styles.textColor = [40, 40, 40];
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fontSize = 8.5;
+            if (data.column.index === 2) data.cell.styles.halign = 'right';
+          }
+        }
+      },
+      alternateRowStyles: { fillColor: [245, 245, 248] },
+      didDrawPage: function(){
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(140, 140, 140);
+        doc.text(`${nombre} (${cod}) — SKU por proveedor`, marginX, doc.internal.pageSize.getHeight() - 18);
+        doc.text(String(doc.internal.getNumberOfPages()), pageW - marginX, doc.internal.pageSize.getHeight() - 18, { align: 'right' });
+      }
+    });
+    y = doc.lastAutoTable.finalY;
+  });
+
+  const fileSafeName = nombre.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  doc.save(`SKU_proveedores_${cod}_${fileSafeName}_${fechaStr.replace(/\//g,'-')}.pdf`);
 }
 
 // ===== EXPORT =====
