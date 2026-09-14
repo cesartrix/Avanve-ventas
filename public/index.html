@@ -102,6 +102,9 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'Roboto Mono',monospace;
 .mbbg{flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden;min-width:40px;}
 .mbf{height:100%;border-radius:3px;background:var(--accent);}
 .mbf.d{background:var(--danger);}
+.dvbar{display:flex;height:17px;border-radius:4px;overflow:hidden;background:var(--border);min-width:110px;}
+.dvseg{display:flex;align-items:center;justify-content:center;font-size:0.5rem;font-weight:800;color:#fff;letter-spacing:.2px;overflow:hidden;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.4);}
+.dv-empty{color:var(--muted);font-size:0.62rem;font-family:'Roboto Mono',monospace;}
 .searchbar{display:flex;gap:7px;margin-bottom:10px;}
 .searchbar input{flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--text);font-family:'Roboto',sans-serif;font-size:0.78rem;outline:none;}
 .searchbar input:focus{border-color:var(--accent);}
@@ -305,7 +308,7 @@ tr.sup-group-sum td{
       <div class="panel">
         <div class="ptitle"><span class="dot p"></span>Tabla de avance</div>
         <div class="searchbar"><input id="sav" placeholder="🔍 Buscar vendedor..." oninput="renderAv()"></div>
-        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Proyección</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Cant. SKU</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
+        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Proyección</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Cant. SKU</th><th>Estado</th><th>Día de Visita</th></tr></thead><tbody id="tb-av"></tbody></table></div>
         <div class="mc" id="mc-av"></div>
       </div>
     </div>
@@ -734,6 +737,49 @@ function parseWB(wb, fname) {
       window.SKU_PROV_DETAIL = outDetail;
     }
 
+    // ---- X RUTA: incidencia del día de visita en la facturación de cada vendedor ----
+    // Hoja "X Ruta": columna A/C = ruta de venta + facturación acumulada de esa ruta.
+    // Columnas N/O/P/Q/R = tabla maestra de rutas (Ruta, Descripción, Día de Visita, Cod Vendedor, Vendedor).
+    // El día de visita solo está clasificado para rutas con esquema rotativo de 2 días
+    // (LUJU=Lunes/Jueves, MAVI=Martes/Viernes, MISA=Miércoles/Sábado); el resto queda sin clasificar.
+    window.DIA_VISITA = {};
+    if (wb.SheetNames.includes('X Ruta')) {
+      const xrWS = wb.Sheets['X Ruta'];
+      const xrRaw = XLSX.utils.sheet_to_json(xrWS, {header:1, defval:null});
+      const DIAS = ['LUJU','MAVI','MISA'];
+
+      // Tabla maestra: N(13)=Ruta, P(15)=Día Visita, Q(16)=Cod Vendedor
+      const routeInfo = {};
+      for (let i = 0; i < xrRaw.length; i++) {
+        const row = xrRaw[i];
+        if (!row) continue;
+        const rutaCod = row[13];
+        if (isBlank(rutaCod) || isNaN(parseFloat(rutaCod))) continue;
+        const vend = row[16];
+        if (isBlank(vend) || isNaN(parseFloat(vend))) continue;
+        const dia = row[15] ? String(row[15]).trim().toUpperCase() : null;
+        routeInfo[String(parseInt(rutaCod,10))] = { dia, vendedor: String(parseInt(vend,10)) };
+      }
+
+      // Facturación por ruta: A(0)=Código Ruta, C(2)=Importe Neto Facturado
+      const acc = {}; // { codVendedor: {LUJU,MAVI,MISA,total} }
+      for (let i = 0; i < xrRaw.length; i++) {
+        const row = xrRaw[i];
+        if (!row) continue;
+        const rutaCod = row[0];
+        if (isBlank(rutaCod) || isNaN(parseFloat(rutaCod))) continue;
+        const importe = n(row[2]);
+        if (!importe) continue;
+        const info = routeInfo[String(parseInt(rutaCod,10))];
+        if (!info || !DIAS.includes(info.dia)) continue;
+        acc[info.vendedor] = acc[info.vendedor] || {LUJU:0,MAVI:0,MISA:0,total:0};
+        acc[info.vendedor][info.dia] += importe;
+        acc[info.vendedor].total += importe;
+      }
+      window.DIA_VISITA = acc;
+    }
+    A.forEach(x => { x.dia_visita = window.DIA_VISITA[x.codigo] || null; });
+
     // ---- Update UI ----
     const today = new Date();
     // ===== PARSE HISTORICO =====
@@ -941,6 +987,17 @@ function buildKpiAv(){const d=filt(A);const dS=d.filter(x=>x.supervisor!=='SIN S
 function buildKpiCob(){const d=filt(COB);if(!d.length){document.getElementById('kpi-cob').innerHTML='';return;}const avg=(d.reduce((s,x)=>s+x.cobertura,0)/(d.length||1)).toFixed(1),tc=d.reduce((s,x)=>s+x.ccc,0),tca=d.reduce((s,x)=>s+x.cartera,0),ok=d.filter(x=>x.cobertura>=30).length;document.getElementById('kpi-cob').innerHTML=`<div class="kpi"><div class="kl">Cobertura prom.</div><div class="kv">${avg}%</div><div class="ks">objetivo 85%</div></div><div class="kpi o"><div class="kl">Total CCC</div><div class="kv">${tc}</div><div class="ks">cubiertos</div></div><div class="kpi p"><div class="kl">Cartera total</div><div class="kv">${tca}</div><div class="ks">clientes</div></div><div class="kpi y"><div class="kl">≥30% cobert.</div><div class="kv">${ok}/${d.length}</div><div class="ks">vendedores</div></div>`;}
 
 // ===== TABLES =====
+const DIA_VISITA_COLORS = {LUJU:'#4fc3f7', MAVI:'#ff9f43', MISA:'#66bb6a'};
+function dvBarHtml(x){
+  const dv = x.dia_visita;
+  if (!dv || !dv.total) return '<span class="dv-empty">Sin datos</span>';
+  const segs = ['LUJU','MAVI','MISA'].map(d => ({d, v: dv[d]||0})).filter(s=>s.v>0);
+  const html = segs.map(({d,v}) => {
+    const pct = v/dv.total*100;
+    return `<div class="dvseg" style="width:${pct}%;background:${DIA_VISITA_COLORS[d]}" title="${d}: ${fmt(v)} (${pct.toFixed(0)}%)">${pct>=13?d:''}</div>`;
+  }).join('');
+  return `<div class="dvbar">${html}</div>`;
+}
 function renderAv(){
   const q=(document.getElementById('sav').value||'').toLowerCase();
   const base=filt(A).filter(x=>x.nombre.toLowerCase().includes(q));
@@ -955,7 +1012,7 @@ function renderAv(){
     const col=sc(sup);
 
     // Group header row
-    rows+=`<tr class="sup-group-hdr"><td colspan="13" style="color:${col};border-bottom-color:${col}">
+    rows+=`<tr class="sup-group-hdr"><td colspan="14" style="color:${col};border-bottom-color:${col}">
       <span style="display:inline-flex;align-items:center;gap:8px;">
         <span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>
         ${sl(sup)}
@@ -988,6 +1045,7 @@ function renderAv(){
         <td>${x.cobro?fmt(x.cobro):'—'}</td>
         <td style="color:var(--text);font-weight:600">${x.cantidad_sku!=null?x.cantidad_sku:'—'}</td>
         <td>${badge}</td>
+        <td>${dvBarHtml(x)}</td>
       </tr>`;
       mcRows+=`<div class="mcard" style="border-left:3px solid ${col};cursor:pointer" onclick="showDailyVendorChart('${x.codigo}','${nomEsc}')">
         <div class="mcnm"><span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:4px">${x.codigo}</span>${i+1}. ${x.nombre}</div>
@@ -996,6 +1054,7 @@ function renderAv(){
         <div class="mcr"><span>Proyección</span><span>${fmt(x.proyeccion)}</span></div>
         <div class="mcr"><span>Objetivo</span><span>${fmt(x.objetivo)}</span></div>
         <div class="mcr"><span>Avance</span><span>${x.avance_pct}%</span></div>
+        <div class="mcr" style="align-items:center"><span>Día visita</span>${dvBarHtml(x)}</div>
         <div class="mcr"><span>Cumpl.</span><span style="color:${gc(c)};font-weight:700">${c}%</span></div>
         <div class="mcr"><span>Media real</span><span>${fmt(x.media_real)}</span></div>
         <div class="mcr"><span>Media nec.</span><span>${fmt(x.media_nec)}</span></div>
@@ -1015,6 +1074,11 @@ function renderAv(){
     const tMN=group.reduce((s,x)=>s+(x.media_nec||0),0)/group.length;
     const _skuGrp=group.filter(x=>x.cantidad_sku!=null);
     const tSku=_skuGrp.length?Math.round(_skuGrp.reduce((s,x)=>s+x.cantidad_sku,0)/_skuGrp.length):null;
+    const dvGrp = group.reduce((acc,x)=>{
+      if(!x.dia_visita) return acc;
+      acc.LUJU+=x.dia_visita.LUJU||0; acc.MAVI+=x.dia_visita.MAVI||0; acc.MISA+=x.dia_visita.MISA||0; acc.total+=x.dia_visita.total||0;
+      return acc;
+    },{LUJU:0,MAVI:0,MISA:0,total:0});
     rows+=`<tr class="sup-group-sum" style="font-weight:700;background:#1a1d28">
       <td colspan="2" style="color:#ffffff">&nbsp;</td>
       <td style="color:#ffffff;font-weight:800">${sl(sup)}</td>
@@ -1029,6 +1093,7 @@ function renderAv(){
       <td>${tc?fmt(tc):'—'}</td>
       <td style="color:#ffffff;font-weight:800">${tSku!=null?tSku:'—'}</td>
       <td style="color:var(--accent)">${ok}/${group.length} ok</td>
+      <td>${dvBarHtml({dia_visita:dvGrp})}</td>
     </tr>`;
   });
 
