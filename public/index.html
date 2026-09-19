@@ -862,7 +862,10 @@ function parseWB(wb, fname) {
           cantidad_sku: hSkuMap[m[1]] ? hSkuMap[m[1]].cantidad : null,
         });
       }
-      if (vendedores.length) window.HIST.push({ mes, vendedores });
+      // Celda AD3 (fila 3, columna AD) = SKU general de la empresa en ese mes
+      const ad3 = hRaw[2] ? hRaw[2][29] : null;
+      const skuGeneral = (typeof ad3 === 'number' && isFinite(ad3)) ? ad3 : null;
+      if (vendedores.length) window.HIST.push({ mes, vendedores, skuGeneral });
     }
     window.HIST.sort((a,b) => {
       const ai = meses.findIndex(m => a.mes.toLowerCase().includes(m.toLowerCase()));
@@ -1583,7 +1586,7 @@ function renderHist(idx, btn) {
   const totalProy = vens.reduce((s,x)=>s+x.proyeccion,0);
   const cumplGen = totalObj > 0 ? (totalProy/totalObj*100).toFixed(1) : '—';
   const _skuVens = vens.filter(x=>x.cantidad_sku!=null);
-  const totalSku = _skuVens.length ? Math.round(_skuVens.reduce((s,x)=>s+x.cantidad_sku,0)/_skuVens.length) : null;
+  const totalSku = h.skuGeneral != null ? h.skuGeneral : null;
   const fmtM = v => v>=1e9?(v/1e9).toFixed(2)+'B':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v.toFixed(0);
   const gc = v => v>=100?'var(--accent)':v>=80?'var(--warn)':'var(--danger)';
   const gcCov = v => v>=30?'#00d4aa':v>=15?'#ffcc00':'#ff4545';
@@ -1638,7 +1641,7 @@ function renderHist(idx, btn) {
         </div>
         <div style="text-align:center">
           <div style="font-size:1.3rem;font-weight:800;font-family:'Roboto',sans-serif;color:var(--text)">${totalSku!=null?totalSku:'—'}</div>
-          <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">SKU prom.</div>
+          <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">SKU general</div>
         </div>
       </div>
       <div class="hst-title">Por supervisor</div>
