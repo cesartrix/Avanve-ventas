@@ -32,6 +32,9 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .sku-pdf-btn{display:inline-flex;align-items:center;gap:5px;background:var(--accent3);color:#fff;font-family:'Roboto',sans-serif;font-size:0.68rem;font-weight:800;padding:6px 11px;border-radius:8px;cursor:pointer;border:none;white-space:nowrap;transition:background 0.2s;}
 .sku-pdf-btn:hover{background:#9583ff;}
 .sku-pdf-btn:disabled{opacity:0.5;cursor:not-allowed;}
+.sku-pdf-btn.falt{background:var(--accent2,#ff6b35);}
+.sku-pdf-btn.falt:hover{background:#ff8557;}
+.sku-btns{display:flex;gap:6px;flex-wrap:wrap;}
 
 /* SPLASH */
 #splash{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;padding:24px;text-align:center;}
@@ -741,6 +744,50 @@ function parseWB(wb, fname) {
       window.SKU_PROV_DETAIL = outDetail;
     }
 
+    // ---- ARTÍCULOS DISPONIBLES PARA LA VENTA (para "faltan vender") ----
+    // Hoja "Base SKU": Col AO (idx 40) = código de artículo disponible, Col AP (idx 41) = descripción.
+    // El proveedor de cada artículo se toma de la hoja "Base Art" (Col A = código, "Razón Social" = proveedor);
+    // si no está ahí, se usa el proveedor (Col AN) de las filas vendidas de Base SKU.
+    window.SKU_DISPONIBLES = [];
+    if (wb.SheetNames.includes('Base SKU')) {
+      const bsRaw = XLSX.utils.sheet_to_json(wb.Sheets['Base SKU'], {header:1, defval:null});
+      const provByArt = {};
+      if (wb.SheetNames.includes('Base Art')) {
+        const baRaw = XLSX.utils.sheet_to_json(wb.Sheets['Base Art'], {header:1, defval:null});
+        let hIdx = -1, cCod = 0, cProv = -1;
+        for (let i = 0; i < Math.min(baRaw.length, 10); i++) {
+          const r = baRaw[i] || [];
+          const k = r.findIndex(c => typeof c === 'string' && c.trim().toLowerCase().replace('ó','o') === 'razon social');
+          if (k >= 0) { hIdx = i; cProv = k; cCod = r.findIndex(c => typeof c === 'string' && c.trim().toLowerCase().replace('ó','o') === 'codigo'); if (cCod < 0) cCod = 0; break; }
+        }
+        if (hIdx >= 0) {
+          for (let i = hIdx + 1; i < baRaw.length; i++) {
+            const r = baRaw[i]; if (!r || isBlank(r[cCod]) || isBlank(r[cProv])) continue;
+            const k = String(parseInt(r[cCod], 10));
+            if (k !== 'NaN') provByArt[k] = String(r[cProv]).trim();
+          }
+        }
+      }
+      const provSold = {};
+      for (let i = 1; i < bsRaw.length; i++) {
+        const r = bsRaw[i]; if (!r || isBlank(r[7]) || isBlank(r[39])) continue;
+        const p = String(r[39]).trim(); if (p === '#N/A') continue;
+        provSold[String(parseInt(r[7], 10))] = p;
+      }
+      const seen = new Set();
+      for (let i = 1; i < bsRaw.length; i++) {
+        const r = bsRaw[i]; if (!r || isBlank(r[40])) continue;
+        const k = String(parseInt(r[40], 10));
+        if (k === 'NaN' || seen.has(k)) continue;
+        seen.add(k);
+        window.SKU_DISPONIBLES.push({
+          codigo: k,
+          descripcion: isBlank(r[41]) ? '(sin descripción)' : String(r[41]).trim(),
+          proveedor: provByArt[k] || provSold[k] || 'SIN PROVEEDOR'
+        });
+      }
+    }
+
     // ---- X RUTA: incidencia del día de visita en la facturación de cada vendedor ----
     // Hoja "X Ruta": columna A/C = ruta de venta + facturación acumulada de esa ruta.
     // Columnas N/O/P/Q/R = tabla maestra de rutas (Ruta, Descripción, Día de Visita, Cod Vendedor, Vendedor).
@@ -1213,8 +1260,12 @@ function renderSkuDetail(){
   const sup = v ? v.supervisor : (getCurSup(skuSelectedCod) || 'SIN SUPERVISOR');
   const col = sc(sup);
   const desglose = (window.SKU_PROV && window.SKU_PROV[skuSelectedCod]) || [];
-  const pdfBtn = desglose.length
-    ? `<button class="sku-pdf-btn" onclick="exportSkuProveedorPDF('${skuSelectedCod}')" title="Exportar el detalle de artículos por proveedor en PDF">⬇ Exportar PDF</button>`
+  const nFalt = skuFaltantes(skuSelectedCod).reduce((s,p) => s + p.articulos.length, 0);
+  const pdfBtn = (desglose.length || nFalt)
+    ? `<div class="sku-btns">` +
+      (desglose.length ? `<button class="sku-pdf-btn" onclick="exportSkuProveedorPDF('${skuSelectedCod}')" title="Exportar en PDF el detalle de artículos vendidos por proveedor">⬇ PDF vendidos</button>` : '') +
+      (nFalt ? `<button class="sku-pdf-btn falt" onclick="exportSkuFaltantesPDF('${skuSelectedCod}')" title="Exportar en PDF los artículos disponibles que este vendedor todavía no vendió, por proveedor">⬇ PDF faltan vender (${nFalt})</button>` : '') +
+      `</div>`
     : '';
   const header = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
     <div style="display:flex;align-items:center;gap:8px;">
@@ -1245,22 +1296,55 @@ function renderSkuDetail(){
 // en la pestaña SKU. Usa window.SKU_PROV_DETAIL[codigo], armado desde la hoja
 // "Base SKU" (Col H = código artículo, Col I = descripción, Col AN = proveedor,
 // Col AM = cantidad), agrupado por proveedor con el detalle de artículos de cada uno.
+function skuFaltantes(cod){
+  // Artículos disponibles (Base SKU col AO) que este vendedor todavía no vendió, agrupados por proveedor.
+  const disp = window.SKU_DISPONIBLES || [];
+  if (!disp.length) return [];
+  const vendidos = new Set();
+  ((window.SKU_PROV_DETAIL && window.SKU_PROV_DETAIL[cod]) || []).forEach(p => p.articulos.forEach(a => vendidos.add(String(parseInt(a.codigo, 10)))));
+  const map = {};
+  disp.forEach(a => {
+    if (vendidos.has(a.codigo)) return;
+    (map[a.proveedor] = map[a.proveedor] || []).push({ codigo: a.codigo, descripcion: a.descripcion });
+  });
+  return Object.entries(map)
+    .map(([proveedor, articulos]) => ({ proveedor, cantidad: articulos.length, articulos: articulos.sort((x, y) => x.descripcion.localeCompare(y.descripcion, 'es')) }))
+    .sort((x, y) => y.cantidad - x.cantidad || x.proveedor.localeCompare(y.proveedor, 'es'));
+}
+
 function exportSkuProveedorPDF(cod){
+  const detalle = (window.SKU_PROV_DETAIL && window.SKU_PROV_DETAIL[cod]) || [];
+  buildSkuPDF(cod, detalle, {
+    titulo: 'Detalle de artículos vendidos por proveedor',
+    resumen: (d, tot) => `${d.length} proveedores · ${tot} SKU vendidos`,
+    headColor: [123, 97, 255], subColor: [230, 228, 245],
+    conCantidad: true, sufijo: 'vendidos', pie: 'SKU vendidos por proveedor',
+    vacio: 'No hay detalle de artículos por proveedor para este vendedor.'
+  });
+}
+
+function exportSkuFaltantesPDF(cod){
+  buildSkuPDF(cod, skuFaltantes(cod), {
+    titulo: 'Artículos que faltan vender por proveedor',
+    resumen: (d, tot) => `${d.length} proveedores · ${tot} artículos disponibles sin vender`,
+    headColor: [255, 107, 53], subColor: [255, 232, 222],
+    conCantidad: false, sufijo: 'faltantes', pie: 'Artículos que faltan vender',
+    vacio: 'Este vendedor ya vendió todos los artículos disponibles (o no hay listado de disponibles en el Excel).'
+  });
+}
+
+// Genera el PDF agrupado por proveedor. detalle = [{proveedor, cantidad, articulos:[{codigo,descripcion,cantidad?}]}]
+function buildSkuPDF(cod, detalle, o){
   if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
     alert('No se pudo cargar la librería de PDF. Revisá tu conexión e intentá de nuevo.');
     return;
   }
-  const detalle = (window.SKU_PROV_DETAIL && window.SKU_PROV_DETAIL[cod]) || [];
-  if (!detalle.length) {
-    alert('No hay detalle de artículos por proveedor para este vendedor.');
-    return;
-  }
+  if (!detalle.length) { alert(o.vacio); return; }
   const v = A.find(x => x.codigo === cod);
   const nombre = v ? v.nombre : (getCurName(cod) || cod);
   const sup = v ? v.supervisor : (getCurSup(cod) || 'SIN SUPERVISOR');
-  const totalSku = detalle.reduce((s, p) => s + p.cantidad, 0);
-  const today = new Date();
-  const fechaStr = today.toLocaleDateString('es-AR');
+  const total = o.conCantidad ? detalle.reduce((s, p) => s + p.cantidad, 0) : detalle.reduce((s, p) => s + p.articulos.length, 0);
+  const fechaStr = new Date().toLocaleDateString('es-AR');
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
@@ -1271,7 +1355,7 @@ function exportSkuProveedorPDF(cod){
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
   doc.setTextColor(20, 20, 20);
-  doc.text('Detalle de artículos por proveedor', marginX, y);
+  doc.text(o.titulo, marginX, y);
   y += 20;
 
   doc.setFont('helvetica', 'normal');
@@ -1281,43 +1365,46 @@ function exportSkuProveedorPDF(cod){
   y += 14;
   doc.text(`Supervisor: ${sup}`, marginX, y);
   y += 14;
-  doc.text(`${detalle.length} proveedores · ${totalSku} SKU en total · Generado ${fechaStr}`, marginX, y);
+  doc.text(`${o.resumen(detalle, total)} · Generado ${fechaStr}`, marginX, y);
   y += 10;
 
-  const colWidths = { codigo: 65, cantidad: 60 };
-  colWidths.desc = pageW - marginX*2 - colWidths.codigo - colWidths.cantidad;
+  const wCod = 65, wCant = 60;
+  const wDesc = pageW - marginX*2 - wCod - (o.conCantidad ? wCant : 0);
+  const nCols = o.conCantidad ? 3 : 2;
 
   detalle.forEach(prov => {
-    const body = prov.articulos.map(a => [a.codigo || '—', a.descripcion, String(a.cantidad)]);
+    const body = prov.articulos.map(a => o.conCantidad ? [a.codigo || '—', a.descripcion, String(a.cantidad)] : [a.codigo || '—', a.descripcion]);
+    const colStyles = o.conCantidad
+      ? { 0: { cellWidth: wCod }, 1: { cellWidth: wDesc }, 2: { cellWidth: wCant, halign: 'right' } }
+      : { 0: { cellWidth: wCod }, 1: { cellWidth: wDesc } };
+    const titulo = o.conCantidad
+      ? `${prov.proveedor}  —  ${prov.cantidad} SKU (${prov.articulos.length} artículos)`
+      : `${prov.proveedor}  —  ${prov.articulos.length} artículos sin vender`;
     doc.autoTable({
       startY: y + 12,
       margin: { left: marginX, right: marginX },
       head: [
-        [{ content: `${prov.proveedor}  —  ${prov.cantidad} SKU (${prov.articulos.length} artículos)`, colSpan: 3 }],
-        ['Código', 'Descripción', 'Cantidad']
+        [{ content: titulo, colSpan: nCols }],
+        o.conCantidad ? ['Código', 'Descripción', 'Cantidad'] : ['Código', 'Descripción']
       ],
       body: body,
       theme: 'grid',
       styles: { font: 'helvetica', fontSize: 9, cellPadding: 4, textColor: [30,30,30] },
-      columnStyles: {
-        0: { cellWidth: colWidths.codigo },
-        1: { cellWidth: colWidths.desc },
-        2: { cellWidth: colWidths.cantidad, halign: 'right' }
-      },
+      columnStyles: colStyles,
       didParseCell: function(data){
         if (data.section === 'head') {
           if (data.row.index === 0) {
-            data.cell.styles.fillColor = [123, 97, 255];
+            data.cell.styles.fillColor = o.headColor;
             data.cell.styles.textColor = [255, 255, 255];
             data.cell.styles.fontStyle = 'bold';
             data.cell.styles.fontSize = 9.5;
             data.cell.styles.halign = 'left';
           } else {
-            data.cell.styles.fillColor = [230, 228, 245];
+            data.cell.styles.fillColor = o.subColor;
             data.cell.styles.textColor = [40, 40, 40];
             data.cell.styles.fontStyle = 'bold';
             data.cell.styles.fontSize = 8.5;
-            if (data.column.index === 2) data.cell.styles.halign = 'right';
+            if (o.conCantidad && data.column.index === 2) data.cell.styles.halign = 'right';
           }
         }
       },
@@ -1326,7 +1413,7 @@ function exportSkuProveedorPDF(cod){
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(140, 140, 140);
-        doc.text(`${nombre} (${cod}) — SKU por proveedor`, marginX, doc.internal.pageSize.getHeight() - 18);
+        doc.text(`${nombre} (${cod}) — ${o.pie}`, marginX, doc.internal.pageSize.getHeight() - 18);
         doc.text(String(doc.internal.getNumberOfPages()), pageW - marginX, doc.internal.pageSize.getHeight() - 18, { align: 'right' });
       }
     });
@@ -1334,7 +1421,7 @@ function exportSkuProveedorPDF(cod){
   });
 
   const fileSafeName = nombre.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  doc.save(`SKU_proveedores_${cod}_${fileSafeName}_${fechaStr.replace(/\//g,'-')}.pdf`);
+  doc.save(`SKU_${o.sufijo}_${cod}_${fileSafeName}_${fechaStr.replace(/\//g,'-')}.pdf`);
 }
 
 // ===== EXPORT =====
