@@ -209,26 +209,43 @@
   dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
   dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) setFile(f); });
 
+  // Vercel corta requests de más de ~4.5 MB ("Request Entity Too Large"),
+  // así que el Excel se sube en partes de 3 MB y el servidor las une.
+  const CHUNK = 3 * 1024 * 1024;
+
+  async function postJSON(url, body, headers) {
+    const resp = await fetch(url, { method: 'POST', headers, body });
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch {
+      if (resp.status === 413) throw new Error('El archivo es demasiado grande para el servidor (413).');
+      throw new Error('Respuesta inesperada del servidor (' + resp.status + '): ' + text.slice(0, 120));
+    }
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    return data;
+  }
+
   async function doUpload() {
     if (!selectedFile) return;
     const btn = document.getElementById('upload-btn');
     btn.disabled = true;
     btn.textContent = '⏳ Subiendo…';
-    showStatus('loading', '<span class="spin">⟳</span> Subiendo archivo…');
-    showProgress(30);
+    showProgress(5);
 
+    const base = '/api/upload?pwd=' + encodeURIComponent(adminPassword);
     try {
-      const resp = await fetch('/api/upload?pwd=' + encodeURIComponent(adminPassword), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
-        body: selectedFile,
-      });
-      showProgress(90);
-      const data = await resp.json();
-      if (!resp.ok) {
-        showStatus('err', '❌ ' + (data.error || resp.statusText));
-        btn.disabled = false; btn.textContent = 'Subir archivo'; hideProgress(); return;
+      const total = Math.max(1, Math.ceil(selectedFile.size / CHUNK));
+      const parts = [];
+      for (let i = 0; i < total; i++) {
+        showStatus('loading', `<span class="spin">⟳</span> Subiendo parte ${i + 1} de ${total}…`);
+        const blob = selectedFile.slice(i * CHUNK, (i + 1) * CHUNK);
+        const d = await postJSON(base + '&mode=part', blob, { 'Content-Type': 'application/octet-stream' });
+        parts.push(d.sha);
+        showProgress(5 + Math.round(75 * (i + 1) / total));
       }
+      showStatus('loading', '<span class="spin">⟳</span> Guardando archivo…');
+      await postJSON(base + '&mode=finalize', JSON.stringify({ parts }), { 'Content-Type': 'application/json' });
       showProgress(100);
       showStatus('ok', '✅ Archivo subido exitosamente');
       btn.textContent = '✓ Subido';
@@ -236,7 +253,7 @@
       setTimeout(() => { btn.textContent = 'Subir archivo'; hideProgress(); }, 2000);
       loadCurrentInfo();
     } catch (err) {
-      showStatus('err', '❌ Error de conexión: ' + err.message);
+      showStatus('err', '❌ Error: ' + err.message);
       btn.disabled = false; btn.textContent = 'Subir archivo'; hideProgress();
     }
   }
