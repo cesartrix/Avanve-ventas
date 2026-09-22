@@ -105,10 +105,8 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'Roboto Mono',monospace;
 .mbbg{flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden;min-width:40px;}
 .mbf{height:100%;border-radius:3px;background:var(--accent);}
 .mbf.d{background:var(--danger);}
-.dvbar{display:flex;height:26px;border-radius:4px;overflow:hidden;background:var(--border);width:100%;min-width:90px;max-width:220px;}
-.dvseg{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;line-height:1;font-weight:800;color:#fff;letter-spacing:.2px;overflow:hidden;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.4);}
-.dvseg b{font-size:0.52rem;}
-.dvseg small{font-size:0.44rem;font-weight:600;opacity:.9;}
+.dvbar{display:flex;height:17px;border-radius:4px;overflow:hidden;background:var(--border);min-width:110px;}
+.dvseg{display:flex;align-items:center;justify-content:center;font-size:0.5rem;font-weight:800;color:#fff;letter-spacing:.2px;overflow:hidden;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.4);}
 .dv-empty{color:var(--muted);font-size:0.62rem;font-family:'Roboto Mono',monospace;}
 .searchbar{display:flex;gap:7px;margin-bottom:10px;}
 .searchbar input{flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--text);font-family:'Roboto',sans-serif;font-size:0.78rem;outline:none;}
@@ -313,7 +311,7 @@ tr.sup-group-sum td{
       <div class="panel">
         <div class="ptitle"><span class="dot p"></span>Tabla de avance</div>
         <div class="searchbar"><input id="sav" placeholder="🔍 Buscar vendedor..." oninput="renderAv()"></div>
-        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Día de Visita</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Proyección</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Cant. SKU</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
+        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Proyección</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Cant. SKU</th><th>Estado</th><th>Día de Visita</th></tr></thead><tbody id="tb-av"></tbody></table></div>
         <div class="mc" id="mc-av"></div>
       </div>
     </div>
@@ -747,7 +745,8 @@ function parseWB(wb, fname) {
     }
 
     // ---- ARTÍCULOS DISPONIBLES PARA LA VENTA (para "faltan vender") ----
-    // Hoja "Base SKU": Col AO (idx 40) = código de artículo disponible, Col AP (idx 41) = descripción.
+    // Hoja "Base SKU": Col AO (idx 40) = código de artículo disponible, Col AP (idx 41) = descripción,
+    // Col BA (idx 52) = "SI"/"NO" (solo se incluyen los marcados "SI").
     // El proveedor de cada artículo se toma de la hoja "Base Art" (Col A = código, "Razón Social" = proveedor);
     // si no está ahí, se usa el proveedor (Col AN) de las filas vendidas de Base SKU.
     window.SKU_DISPONIBLES = [];
@@ -779,6 +778,8 @@ function parseWB(wb, fname) {
       const seen = new Set();
       for (let i = 1; i < bsRaw.length; i++) {
         const r = bsRaw[i]; if (!r || isBlank(r[40])) continue;
+        const flagBA = isBlank(r[52]) ? '' : String(r[52]).trim().toUpperCase();
+        if (flagBA !== 'SI') continue; // Col BA: solo artículos marcados "SI"
         const k = String(parseInt(r[40], 10));
         if (k === 'NaN' || seen.has(k)) continue;
         seen.add(k);
@@ -1050,8 +1051,7 @@ function dvBarHtml(x){
   const segs = ['LUJU','MAVI','MISA'].map(d => ({d, v: dv[d]||0})).filter(s=>s.v>0);
   const html = segs.map(({d,v}) => {
     const pct = v/dv.total*100;
-    const label = pct>=10 ? `<b>${d}</b>${pct>=17?`<small>${pct.toFixed(0)}%</small>`:''}` : '';
-    return `<div class="dvseg" style="width:${pct}%;background:${DIA_VISITA_COLORS[d]}" title="${d}: ${fmt(v)} (${pct.toFixed(0)}%)">${label}</div>`;
+    return `<div class="dvseg" style="width:${pct}%;background:${DIA_VISITA_COLORS[d]}" title="${d}: ${fmt(v)} (${pct.toFixed(0)}%)">${pct>=13?d:''}</div>`;
   }).join('');
   return `<div class="dvbar">${html}</div>`;
 }
@@ -1091,7 +1091,6 @@ function renderAv(){
         <td style="color:var(--muted)">${globalIdx}</td>
         <td style="color:var(--muted);font-size:0.62rem">${i+1}°</td>
         <td class="nc"><span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:5px">${x.codigo}</span>${x.nombre}</td>
-        <td>${dvBarHtml(x)}</td>
         <td>${fmt(x.objetivo)}</td>
         <td>${fmt(x.facturacion)}</td>
         <td>${x.facturacion_dia?fmt(x.facturacion_dia):'—'}</td>
@@ -1103,15 +1102,16 @@ function renderAv(){
         <td>${x.cobro?fmt(x.cobro):'—'}</td>
         <td style="color:var(--text);font-weight:600">${x.cantidad_sku!=null?x.cantidad_sku:'—'}</td>
         <td>${badge}</td>
+        <td>${dvBarHtml(x)}</td>
       </tr>`;
       mcRows+=`<div class="mcard" style="border-left:3px solid ${col};cursor:pointer" onclick="showDailyVendorChart('${x.codigo}','${nomEsc}')">
         <div class="mcnm"><span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:4px">${x.codigo}</span>${i+1}. ${x.nombre}</div>
-        <div class="mcr" style="flex-direction:column;align-items:stretch;gap:4px;margin-bottom:8px"><span style="color:var(--muted)">Día visita</span>${dvBarHtml(x)}</div>
         <div class="mcr"><span>Facturado</span><span>${fmt(x.facturacion)}</span></div>
         <div class="mcr"><span>Fact. Día</span><span>${x.facturacion_dia?fmt(x.facturacion_dia):"—"}</span></div>
         <div class="mcr"><span>Proyección</span><span>${fmt(x.proyeccion)}</span></div>
         <div class="mcr"><span>Objetivo</span><span>${fmt(x.objetivo)}</span></div>
         <div class="mcr"><span>Avance</span><span>${x.avance_pct}%</span></div>
+        <div class="mcr" style="align-items:center"><span>Día visita</span>${dvBarHtml(x)}</div>
         <div class="mcr"><span>Cumpl.</span><span style="color:${gc(c)};font-weight:700">${c}%</span></div>
         <div class="mcr"><span>Media real</span><span>${fmt(x.media_real)}</span></div>
         <div class="mcr"><span>Media nec.</span><span>${fmt(x.media_nec)}</span></div>
@@ -1139,7 +1139,6 @@ function renderAv(){
     rows+=`<tr class="sup-group-sum" style="font-weight:700;background:#1a1d28">
       <td colspan="2" style="color:#ffffff">&nbsp;</td>
       <td style="color:#ffffff;font-weight:800">${sl(sup)}</td>
-      <td>${dvBarHtml({dia_visita:dvGrp})}</td>
       <td style="color:#ffffff">${fmt(to)}</td>
       <td style="color:#ffffff">${fmt(tf)}</td>
       <td style="color:#ffffff">${fmt(group.reduce((s,x)=>s+x.facturacion_dia,0))}</td>
@@ -1151,6 +1150,7 @@ function renderAv(){
       <td>${tc?fmt(tc):'—'}</td>
       <td style="color:#ffffff;font-weight:800">${tSku!=null?tSku:'—'}</td>
       <td style="color:var(--accent)">${ok}/${group.length} ok</td>
+      <td>${dvBarHtml({dia_visita:dvGrp})}</td>
     </tr>`;
   });
 
