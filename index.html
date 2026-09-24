@@ -35,6 +35,16 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .sku-pdf-btn.falt{background:var(--accent2,#ff6b35);}
 .sku-pdf-btn.falt:hover{background:#ff8557;}
 .sku-btns{display:flex;gap:6px;flex-wrap:wrap;}
+.cob-split{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:11px;align-items:start;}
+@media(max-width:900px){.cob-split{grid-template-columns:1fr;}}
+.cob-detail-panel{position:sticky;top:var(--cob-sticky-top,150px);max-height:calc(100vh - var(--cob-sticky-top,150px) - 12px);overflow-y:auto;}
+@media(max-width:900px){.cob-detail-panel{position:static;max-height:none;overflow:visible;}}
+.cob-click{cursor:pointer;}
+.cob-click:hover{background:rgba(255,255,255,0.03);}
+tr.sup-group-hdr.cob-click.sel td,tr.sup-group-sum.cob-click.sel td{background:rgba(0,212,170,0.10)!important;}
+.cob-lbl.sel{background:rgba(0,212,170,0.10);border-radius:6px;}
+.cob-zero summary{cursor:pointer;color:var(--muted);font-size:0.7rem;padding:8px 0;}
+
 
 /* SPLASH */
 #splash{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;padding:24px;text-align:center;}
@@ -359,10 +369,16 @@ tr.sup-group-sum td{
         <div class="panel"><div class="ptitle"><span class="dot"></span>Cobertura %</div><canvas id="ccob"></canvas></div>
         <div class="panel"><div class="ptitle"><span class="dot o"></span>CCC vs Cartera</div><canvas id="cccc"></canvas></div>
       </div>
+      <div class="cob-split">
       <div class="panel">
         <div class="ptitle"><span class="dot p"></span>Detalle cobertura</div>
         <div class="ts hm"><table><thead><tr><th>Vendedor</th><th>Cobertura</th><th>CCC</th><th>Cartera</th><th>CCC Falt. 85%</th><th>%</th></tr></thead><tbody id="tb-cob"></tbody></table></div>
         <div class="mc" id="mc-cob"></div>
+      </div>
+      <div class="panel cob-detail-panel" id="cob-detail-panel">
+        <div class="ptitle"><span class="dot o"></span>CCC por proveedor</div>
+        <div id="cob-detail"><div style="text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">Elegí un supervisor o un vendedor de la tabla para ver el desglose de CCC por proveedor.</div></div>
+      </div>
       </div>
     </div>
     <div class="pg" id="pg-sku">
@@ -416,7 +432,7 @@ const SC = {'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35',
 const SL = {'MARTIN PREVENTA':'Martín Preventa','MARTIN':'Martín','CRISTIAN':'Cristian','GONZALO':'Gonzalo','MAXI':'Maxi','SIN SUPERVISOR':'Sin sup.'};
 const SUPS = Object.keys(SC);
 
-let A=[], COB=[], cur='TODOS', CH={}, skuSelectedCod=null;
+let A=[], COB=[], cur='TODOS', CH={}, skuSelectedCod=null, cobSel=null;
 
 const fmt=v=>'$'+Math.round(v).toLocaleString('es-AR');
 const fmtS=v=>'$'+(v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v.toFixed(0));
@@ -683,6 +699,42 @@ function parseWB(wb, fname) {
           cartera: Math.round(n(row[iCAR])),
         });
       }
+    }
+
+    // ---- BASE COBERTURA: CCC POR PROVEEDOR ----
+    // Hoja "Base Cobertura", bloque "Coberturaxproveedor": Col K (idx 10) = nro de vendedor
+    // (solo en la 1ª fila de cada bloque, se arrastra hacia abajo), Col L (idx 11) = proveedor
+    // (formato "114 - ARCOR", se saca el prefijo numérico), Col M (idx 12) = CCC,
+    // Col N (idx 13) = cartera del vendedor (repetida en cada fila).
+    window.COB_PROV = {};
+    if (wb.SheetNames.includes('Base Cobertura')) {
+      const bcRaw = XLSX.utils.sheet_to_json(wb.Sheets['Base Cobertura'], {header:1, defval:null});
+      const acc = {};
+      let curVen = null;
+      for (let i = 2; i < bcRaw.length; i++) {
+        const row = bcRaw[i];
+        if (!row) continue;
+        const kRaw = row[10];
+        if (!isBlank(kRaw)) {
+          const kStr = String(kRaw).trim();
+          if (/^total/i.test(kStr)) break;
+          const kn = parseInt(kStr, 10);
+          curVen = isNaN(kn) ? null : String(kn);
+        }
+        if (!curVen || isBlank(row[11])) continue;
+        const prov = String(row[11]).trim().replace(/^\d+\s*-\s*/, '');
+        const o = acc[curVen] = acc[curVen] || { cartera: 0, provs: {} };
+        o.cartera = Math.round(n(row[13])) || o.cartera;
+        o.provs[prov] = (o.provs[prov] || 0) + n(row[12]);
+      }
+      Object.keys(acc).forEach(cod => {
+        window.COB_PROV[cod] = {
+          cartera: acc[cod].cartera,
+          provs: Object.entries(acc[cod].provs)
+            .map(([proveedor, ccc]) => ({ proveedor, ccc: Math.round(ccc) }))
+            .sort((a, b) => b.ccc - a.ccc || a.proveedor.localeCompare(b.proveedor)),
+        };
+      });
     }
 
     // ---- BASE SKU POR PROVEEDOR ----
@@ -1178,7 +1230,8 @@ function renderCob(){
     const col=sc(sup);
 
     // Group header row
-    rows+=`<tr class="sup-group-hdr"><td colspan="6" style="color:${col};border-bottom-color:${col}">
+    const supKey='S:'+sup, supSel=cobSel===supKey?' sel':'';
+    rows+=`<tr class="sup-group-hdr cob-click${supSel}" onclick="selectCob('${supKey}')" title="Ver CCC por proveedor del supervisor"><td colspan="6" style="color:${col};border-bottom-color:${col}">
       <span style="display:inline-flex;align-items:center;gap:8px;">
         <span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>
         ${sl(sup)}
@@ -1187,14 +1240,15 @@ function renderCob(){
     </td></tr>`;
 
     // Mobile: group label card
-    mcRows+=`<div style="display:flex;align-items:center;gap:7px;padding:8px 0 4px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${col}">
+    mcRows+=`<div class="cob-click cob-lbl${supSel}" onclick="selectCob('${supKey}')" style="display:flex;align-items:center;gap:7px;padding:8px 4px 4px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${col}">
       <span style="width:7px;height:7px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}
     </div>`;
 
     group.forEach(x=>{
       const pct=x.cartera?((x.ccc/x.cartera)*100).toFixed(1):'—';
-      rows+=`<tr><td class="nc"><span style="color:var(--muted);font-size:0.62rem;margin-right:4px">${x.codigo}</span>${x.nombre}</td><td class="${x.cobertura>=30?'ph':x.cobertura>=15?'pm':'pl'}">${x.cobertura}%</td><td>${x.ccc}</td><td>${x.cartera}</td><td style="color:${x.ccc_faltante<=0?'var(--accent)':x.ccc_faltante<=10?'var(--warn)':'var(--danger)'}">${x.ccc_faltante<=0?'✓':x.ccc_faltante.toFixed(1)}</td><td><div class="mbw"><div class="mbbg"><div class="mbf ${x.cobertura<15?'d':''}" style="width:${Math.min(x.cobertura*3,100)}%"></div></div><span>${pct}%</span></div></td></tr>`;
-      mcRows+=`<div class="mcard" style="border-left:3px solid ${col}"><div class="mcnm"><span style="color:var(--muted);font-size:0.62rem;margin-right:4px">${x.codigo}</span>${x.nombre}</div><div class="mcr"><span>Cobertura</span><span style="color:${x.cobertura>=30?'#00d4aa':x.cobertura>=15?'#ffcc00':'#ff4545'};font-weight:700">${x.cobertura}%</span></div><div class="mcr"><span>CCC</span><span>${x.ccc}</span></div><div class="mcr"><span>Cartera</span><span>${x.cartera}</span></div><div class="mcr"><span>CCC Falt. 85%</span><span style="color:${x.ccc_faltante<=0?'var(--accent)':x.ccc_faltante<=10?'var(--warn)':'var(--danger)'}">${x.ccc_faltante<=0?'✓':x.ccc_faltante.toFixed(1)}</span></div></div>`;
+      const vSel=cobSel==='V:'+x.codigo?' sel':'';
+      rows+=`<tr class="hst-vendor-row cob-click${vSel}" onclick="selectCob('V:${x.codigo}')" title="Ver CCC por proveedor"><td class="nc"><span style="color:var(--muted);font-size:0.62rem;margin-right:4px">${x.codigo}</span>${x.nombre}</td><td class="${x.cobertura>=30?'ph':x.cobertura>=15?'pm':'pl'}">${x.cobertura}%</td><td>${x.ccc}</td><td>${x.cartera}</td><td style="color:${x.ccc_faltante<=0?'var(--accent)':x.ccc_faltante<=10?'var(--warn)':'var(--danger)'}">${x.ccc_faltante<=0?'✓':x.ccc_faltante.toFixed(1)}</td><td><div class="mbw"><div class="mbbg"><div class="mbf ${x.cobertura<15?'d':''}" style="width:${Math.min(x.cobertura*3,100)}%"></div></div><span>${pct}%</span></div></td></tr>`;
+      mcRows+=`<div class="mcard cob-click${vSel}" onclick="selectCob('V:${x.codigo}')" style="border-left:3px solid ${col}"><div class="mcnm"><span style="color:var(--muted);font-size:0.62rem;margin-right:4px">${x.codigo}</span>${x.nombre}</div><div class="mcr"><span>Cobertura</span><span style="color:${x.cobertura>=30?'#00d4aa':x.cobertura>=15?'#ffcc00':'#ff4545'};font-weight:700">${x.cobertura}%</span></div><div class="mcr"><span>CCC</span><span>${x.ccc}</span></div><div class="mcr"><span>Cartera</span><span>${x.cartera}</span></div><div class="mcr"><span>CCC Falt. 85%</span><span style="color:${x.ccc_faltante<=0?'var(--accent)':x.ccc_faltante<=10?'var(--warn)':'var(--danger)'}">${x.ccc_faltante<=0?'✓':x.ccc_faltante.toFixed(1)}</span></div></div>`;
     });
 
     // Subtotal row per supervisor
@@ -1203,7 +1257,7 @@ function renderCob(){
     const avgCob=(group.reduce((s,x)=>s+x.cobertura,0)/group.length).toFixed(1);
     const tfalt=group.reduce((s,x)=>s+Math.max(0,x.ccc_faltante),0);
     const gpct=tcar?((tccc/tcar)*100).toFixed(1):'—';
-    rows+=`<tr class="sup-group-sum" style="font-weight:700;background:#1a1d28">
+    rows+=`<tr class="sup-group-sum cob-click${supSel}" onclick="selectCob('${supKey}')" title="Ver CCC por proveedor del supervisor" style="font-weight:700;background:#1a1d28">
       <td style="color:#ffffff;font-weight:800">${sl(sup)}</td>
       <td style="color:${avgCob>=30?'#00d4aa':avgCob>=15?'#ffcc00':'#ff4545'};font-weight:800">${avgCob}%</td>
       <td style="color:#ffffff">${tccc}</td>
@@ -1215,6 +1269,85 @@ function renderCob(){
 
   document.getElementById('tb-cob').innerHTML = rows;
   document.getElementById('mc-cob').innerHTML = mcRows;
+  renderCobDetail();
+}
+
+// ===== COBERTURA: DESGLOSE DE CCC POR PROVEEDOR (panel al costado) =====
+// cobSel = 'V:<codigo>' (vendedor) o 'S:<supervisor>' (suma de sus vendedores). Toggle.
+function selectCob(key){
+  cobSel = (cobSel === key) ? null : key;
+  renderCob();
+  const pnl = document.getElementById('cob-detail-panel');
+  if (!pnl) return;
+  // Alto real de los encabezados fijos (header + barra de supervisores + pestañas)
+  let top = 0;
+  document.querySelectorAll('header, .supbar, .stabs').forEach(h => {
+    const cs = getComputedStyle(h);
+    if (cs.position === 'sticky' || cs.position === 'fixed') top = Math.max(top, h.getBoundingClientRect().bottom);
+  });
+  if (window.innerWidth <= 900) {
+    // Mobile / pantalla angosta: el panel queda debajo de la lista, se lleva la vista hasta él
+    if (cobSel) window.scrollTo({ top: pnl.getBoundingClientRect().top + window.scrollY - top - 8, behavior: 'smooth' });
+  } else {
+    // Desktop: el panel es sticky, pegado debajo de los encabezados fijos
+    if (top > 0) pnl.style.setProperty('--cob-sticky-top', (top + 8) + 'px');
+    pnl.scrollTop = 0;
+  }
+}
+function renderCobDetail(){
+  const el = document.getElementById('cob-detail');
+  if (!el) return;
+  const empty = msg => `<div style="text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">${msg}</div>`;
+  const base = filt(COB);
+  // Si la selección ya no está visible con el filtro actual, se limpia
+  if (cobSel && cobSel.startsWith('V:') && !base.some(x => x.codigo === cobSel.slice(2))) cobSel = null;
+  if (cobSel && cobSel.startsWith('S:') && !base.some(x => x.supervisor === cobSel.slice(2))) cobSel = null;
+  if (!cobSel) { el.innerHTML = empty('Elegí un supervisor o un vendedor de la tabla para ver el desglose de CCC por proveedor.'); return; }
+
+  const CP = window.COB_PROV || {};
+  let titulo, sup, cods;
+  if (cobSel.startsWith('V:')) {
+    const cod = cobSel.slice(2);
+    const v = base.find(x => x.codigo === cod);
+    sup = v.supervisor; cods = [cod];
+    titulo = `<span style="font-family:'Roboto Mono',monospace;font-size:0.65rem;color:var(--muted)">${cod}</span><span style="font-weight:700">${v.nombre}</span>${tag(sup)}`;
+  } else {
+    sup = cobSel.slice(2);
+    cods = base.filter(x => x.supervisor === sup).map(x => x.codigo);
+    titulo = `<span style="font-weight:700">Supervisor</span>${tag(sup)}<span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted)">${cods.length} vendedores</span>`;
+  }
+  const col = sc(sup);
+  // Agrega CCC por proveedor (y cartera) sobre los vendedores seleccionados
+  let cartera = 0; const accP = {}; let conDatos = 0;
+  cods.forEach(c => {
+    const d = CP[c]; if (!d) return;
+    conDatos++; cartera += d.cartera;
+    d.provs.forEach(p => { accP[p.proveedor] = (accP[p.proveedor] || 0) + p.ccc; });
+  });
+  const header = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">${titulo}</div>`;
+  if (!conDatos) {
+    el.innerHTML = header + empty('Sin datos de CCC por proveedor en la hoja "Base Cobertura".');
+    return;
+  }
+  const provs = Object.entries(accP).map(([proveedor, ccc]) => ({ proveedor, ccc }))
+    .sort((a, b) => b.ccc - a.ccc || a.proveedor.localeCompare(b.proveedor));
+  const con = provs.filter(p => p.ccc > 0), sin = provs.filter(p => p.ccc <= 0);
+  const max = con.length ? con[0].ccc : 1;
+  const row = p => {
+    const pct = cartera ? p.ccc * 100 / cartera : 0;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.76rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${p.proveedor}">${p.proveedor}</div>
+        <div class="mbw" style="margin-top:4px;"><div class="mbbg"><div class="mbf" style="width:${Math.max(3, p.ccc * 100 / max)}%;background:${col}"></div></div></div>
+      </div>
+      <div style="font-family:'Roboto Mono',monospace;font-weight:700;color:var(--text);min-width:38px;text-align:right;" title="Clientes con compra (CCC)">${p.ccc}</div>
+      <div style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);min-width:44px;text-align:right;" title="CCC / Cartera">${pct.toFixed(1)}%</div>
+    </div>`;
+  };
+  const cabecera = `<div style="display:flex;justify-content:space-between;font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;padding:4px 0;border-bottom:1px solid var(--border)"><span>Proveedor</span><span>CCC &nbsp;·&nbsp; % cartera</span></div>`;
+  const resumen = `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted);margin-bottom:10px">${con.length} proveedores con compra · Cartera <span style="color:var(--text);font-weight:700">${cartera}</span> clientes</div>`;
+  const sinHtml = sin.length ? `<details class="cob-zero"><summary>${sin.length} proveedores sin CCC</summary>${sin.map(p => `<div style="font-size:0.7rem;color:var(--muted);padding:3px 0;border-bottom:1px solid var(--border)">${p.proveedor}</div>`).join('')}</details>` : '';
+  el.innerHTML = header + resumen + cabecera + `<div>${con.map(row).join('')}</div>` + sinHtml;
 }
 function buildRanking(){const d=filt(A).sort((a,b)=>b.cumplimiento-a.cumplimiento);const m=['🥇','🥈','🥉','4️⃣','5️⃣'];document.getElementById('rtop').innerHTML=d.slice(0,5).map((x,i)=>`<div class="sr"><span class="sn">${m[i]} <span style="color:var(--muted);font-size:0.72rem">${x.codigo}</span> ${x.nombre} ${tag(x.supervisor,true)}</span><span class="sv">${x.cumplimiento}%</span></div>`).join('');document.getElementById('rbot').innerHTML=d.slice(-5).reverse().map(x=>`<div class="sr"><span class="sn" style="color:#ff4545"><span style="color:#ff454599;font-size:0.72rem">${x.codigo}</span> ${x.nombre} ${tag(x.supervisor,true)}</span><span style="font-family:'Roboto Mono',monospace;color:#ff4545">${x.cumplimiento}%</span></div>`).join('');}
 function buildSupCards(){document.getElementById('supcards').innerHTML=SUPS.map(s=>{const d=A.filter(x=>x.supervisor===s);if(!d.length)return'';const sub2=(window.SUP_SUBTOTALS||{})[s];const tf=sub2?sub2.facturacion:d.reduce((a,x)=>a+x.facturacion,0),to=sub2?sub2.objetivo:d.reduce((a,x)=>a+x.objetivo,0),tp2=sub2?sub2.proyeccion:d.reduce((a,x)=>a+x.proyeccion,0),avgC=(to>0?tp2/to*100:0).toFixed(1),ok=d.filter(x=>x.cumplimiento>=100).length,col=sc(s);return`<div class="scard" style="border-left-color:${col}"><div class="scnm" style="color:${col}">${sl(s)}</div><div class="scr"><span>Vendedores</span><span>${d.length}</span></div><div class="scr"><span>Facturado</span><span>${fmt(tf)}</span></div><div class="scr"><span>Objetivo</span><span>${fmt(to)}</span></div><div class="scr"><span>Cumpl. prom.</span><span style="color:${gc(+avgC)}">${avgC}%</span></div><div class="scr"><span>En objetivo</span><span style="color:#00d4aa">${ok}/${d.length}</span></div></div>`;}).join('');}
