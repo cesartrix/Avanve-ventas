@@ -313,7 +313,7 @@ tr.sup-group-sum td{
       <div class="panel">
         <div class="ptitle"><span class="dot p"></span>Tabla de avance</div>
         <div class="searchbar"><input id="sav" placeholder="🔍 Buscar vendedor..." oninput="renderAv()"></div>
-        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Día de Visita</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Proyección</th><th>Avance%</th><th>Cumpl.</th><th>Media Real</th><th>Media Nec.</th><th>Cobro</th><th>Cant. SKU</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
+        <div class="ts hm"><table><thead><tr><th>#</th><th>Supervisor</th><th>Vendedor</th><th>Día de Visita</th><th>Objetivo</th><th>Facturado</th><th>Fact. Día</th><th>Proyección</th><th>Avance%</th><th>Cumpl.</th><th>CCC/Cartera</th><th>Media Nec.</th><th>Cobro</th><th>Cant. SKU</th><th>Estado</th></tr></thead><tbody id="tb-av"></tbody></table></div>
         <div class="mc" id="mc-av"></div>
       </div>
     </div>
@@ -1036,6 +1036,12 @@ const co=()=>({responsive:true,maintainAspectRatio:true,plugins:{legend:{display
 function buildCC(){dc('cc');const d=filt(A).sort((a,b)=>b.cumplimiento-a.cumplimiento);if(!d.length)return;CH['cc']=new Chart(document.getElementById('cc'),{type:'bar',data:{labels:d.map(x=>x.codigo),datasets:[{data:d.map(x=>x.cumplimiento),backgroundColor:d.map(x=>gc(x.cumplimiento)+'bb'),borderColor:d.map(x=>gc(x.cumplimiento)),borderWidth:1,borderRadius:4}]},options:{...co(),plugins:{legend:{display:false},tooltip:{callbacks:{title:i=>d[i[0].dataIndex].codigo+' - '+d[i[0].dataIndex].nombre,label:c=>c.parsed.y.toFixed(1)+'%'}}},scales:{x:co().scales.x,y:{...co().scales.y,ticks:{...co().scales.y.ticks,callback:v=>v+'%'}}}}});}
 function buildCF(){dc('cf');const d=filt(A).sort((a,b)=>b.facturacion-a.facturacion).slice(0,12);if(!d.length)return;const bg=cur==='TODOS'?d.map(x=>sc(x.supervisor)+'bb'):sc(cur)+'bb';const bc=cur==='TODOS'?d.map(x=>sc(x.supervisor)):sc(cur);CH['cf']=new Chart(document.getElementById('cf'),{type:'bar',data:{labels:d.map(x=>x.codigo),datasets:[{data:d.map(x=>x.facturacion/1e6),backgroundColor:Array.isArray(bg)?bg:d.map(_=>bg),borderColor:Array.isArray(bc)?bc:d.map(_=>bc),borderWidth:1,borderRadius:4}]},options:{...co(),plugins:{legend:{display:false},tooltip:{callbacks:{title:i=>d[i[0].dataIndex].codigo+' - '+d[i[0].dataIndex].nombre,label:c=>'$'+c.parsed.y.toFixed(2)+'M'}}},scales:{x:co().scales.x,y:{...co().scales.y,ticks:{...co().scales.y.ticks,callback:v=>'$'+v+'M'}}}}});}
 function buildCCob(){dc('ccob');const d=filt(COB).sort((a,b)=>b.cobertura-a.cobertura);if(!d.length)return;CH['ccob']=new Chart(document.getElementById('ccob'),{type:'bar',data:{labels:d.map(x=>x.codigo),datasets:[{data:d.map(x=>x.cobertura),backgroundColor:d.map(x=>x.cobertura>=30?'#00d4aa99':x.cobertura>=15?'#ffcc0099':'#ff454599'),borderColor:d.map(x=>x.cobertura>=30?'#00d4aa':x.cobertura>=15?'#ffcc00':'#ff4545'),borderWidth:1,borderRadius:4}]},options:{...co(),plugins:{legend:{display:false},tooltip:{callbacks:{title:i=>d[i[0].dataIndex].codigo+' - '+d[i[0].dataIndex].nombre,label:c=>c.parsed.y.toFixed(1)+'%'}}},scales:{x:co().scales.x,y:{...co().scales.y,ticks:{...co().scales.y.ticks,callback:v=>v+'%'}}}}});}
+function cccCartHtml(ccc,car){
+  if(ccc==null||!car) return '<span style="color:var(--muted)">—</span>';
+  const p=ccc/car*100;
+  return `<div style="line-height:1.15"><span style="font-weight:700">${p.toFixed(1)}%</span><div style="font-size:0.6rem;color:var(--muted)">${ccc} / ${car}</div></div>`;
+}
+function covOf(cod){return (typeof COB!=='undefined'&&COB.find(c=>c.codigo===cod))||null;}
 function buildCCCC(){dc('cccc');const d=filt(COB).sort((a,b)=>b.cobertura-a.cobertura).slice(0,14);if(!d.length)return;CH['cccc']=new Chart(document.getElementById('cccc'),{type:'bar',data:{labels:d.map(x=>x.codigo),datasets:[{label:'CCC',data:d.map(x=>x.ccc),backgroundColor:'#7b61ff99',borderColor:'#7b61ff',borderWidth:1,borderRadius:4},{label:'Cartera',data:d.map(x=>x.cartera),backgroundColor:'#ff6b3540',borderColor:'#ff6b35',borderWidth:1,borderRadius:4}]},options:{...co(),plugins:{legend:{display:true,labels:{color:'#e8eaf0',font:{size:10}}}}}});}
 function buildDist(){dc('cdist');const d=filt(A);const b={'<50%':0,'50-80%':0,'80-100%':0,'>100%':0};d.forEach(x=>{if(x.cumplimiento<50)b['<50%']++;else if(x.cumplimiento<80)b['50-80%']++;else if(x.cumplimiento<100)b['80-100%']++;else b['>100%']++;});CH['cdist']=new Chart(document.getElementById('cdist'),{type:'doughnut',data:{labels:Object.keys(b),datasets:[{data:Object.values(b),backgroundColor:['#ff4545cc','#ffcc00cc','#7b61ffcc','#00d4aacc'],borderColor:['#ff4545','#ffcc00','#7b61ff','#00d4aa'],borderWidth:2}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,labels:{color:'#e8eaf0',font:{size:11}}}}}});document.getElementById('dstats').innerHTML=`<div class="kpi" style="text-align:center"><div class="kl">&lt;50%</div><div class="kv" style="color:#ff4545">${b['<50%']}</div></div><div class="kpi" style="text-align:center"><div class="kl">50-80%</div><div class="kv" style="color:#ffcc00">${b['50-80%']}</div></div><div class="kpi" style="text-align:center"><div class="kl">80-100%</div><div class="kv" style="color:#7b61ff">${b['80-100%']}</div></div><div class="kpi" style="text-align:center"><div class="kl">&gt;100%</div><div class="kv" style="color:#00d4aa">${b['>100%']}</div></div>`;}
 function buildCSF(){dc('csf');const vals=SUPS.map(s=>A.filter(d=>d.supervisor===s).reduce((a,d)=>a+d.facturacion,0)/1e6);CH['csf']=new Chart(document.getElementById('csf'),{type:'bar',data:{labels:SUPS.map(sl),datasets:[{data:vals,backgroundColor:SUPS.map(s=>sc(s)+'bb'),borderColor:SUPS.map(s=>sc(s)),borderWidth:2,borderRadius:6}]},options:{...co(),plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'$'+c.parsed.y.toFixed(1)+'M'}}},scales:{x:co().scales.x,y:{...co().scales.y,ticks:{...co().scales.y.ticks,callback:v=>'$'+v+'M'}}}}});}
@@ -1101,7 +1107,7 @@ function renderAv(){
         <td>${fmt(x.proyeccion)}</td>
         <td><div class="mbw"><div class="mbbg"><div class="mbf ${x.avance_pct<15?'d':''}" style="width:${Math.min(x.avance_pct*100/40,100)}%"></div></div><span class="${x.avance_pct>=20?'ph':x.avance_pct>=12?'pm':'pl'}">${x.avance_pct}%</span></div></td>
         <td class="${c>=100?'ph':c>=80?'pm':'pl'}" style="font-weight:700">${c}%</td>
-        <td>${fmt(x.media_real)}</td>
+        <td>${(()=>{const cv=covOf(x.codigo);return cccCartHtml(cv?cv.ccc:null,cv?cv.cartera:null);})()}</td>
         <td>${fmt(x.media_nec)}</td>
         <td>${x.cobro?fmt(x.cobro):'—'}</td>
         <td style="color:var(--text);font-weight:600">${x.cantidad_sku!=null?x.cantidad_sku:'—'}</td>
@@ -1116,7 +1122,7 @@ function renderAv(){
         <div class="mcr"><span>Objetivo</span><span>${fmt(x.objetivo)}</span></div>
         <div class="mcr"><span>Avance</span><span>${x.avance_pct}%</span></div>
         <div class="mcr"><span>Cumpl.</span><span style="color:${gc(c)};font-weight:700">${c}%</span></div>
-        <div class="mcr"><span>Media real</span><span>${fmt(x.media_real)}</span></div>
+        <div class="mcr"><span>CCC/Cartera</span><span>${(()=>{const cv=covOf(x.codigo);return cv&&cv.cartera?`${(cv.ccc/cv.cartera*100).toFixed(1)}% (${cv.ccc}/${cv.cartera})`:'—';})()}</span></div>
         <div class="mcr"><span>Media nec.</span><span>${fmt(x.media_nec)}</span></div>
         <div class="mcr"><span>Cant. SKU</span><span>${x.cantidad_sku!=null?x.cantidad_sku:"—"}</span></div>
       </div>`;
@@ -1130,7 +1136,8 @@ function renderAv(){
     const avgC=(to>0?tp/to*100:0).toFixed(1);
     const ok=group.filter(x=>x.cumplimiento>=100).length;
     const tc=group.reduce((s,x)=>s+x.cobro,0);
-    const tMR=group.reduce((s,x)=>s+(x.media_real||0),0)/group.length;
+    const _covGrp=group.map(x=>covOf(x.codigo)).filter(Boolean);
+    const gCCC=_covGrp.reduce((s,c)=>s+(c.ccc||0),0), gCAR=_covGrp.reduce((s,c)=>s+(c.cartera||0),0);
     const tMN=group.reduce((s,x)=>s+(x.media_nec||0),0)/group.length;
     const _skuGrp=group.filter(x=>x.cantidad_sku!=null);
     const tSku=_skuGrp.length?Math.round(_skuGrp.reduce((s,x)=>s+x.cantidad_sku,0)/_skuGrp.length):null;
@@ -1149,7 +1156,7 @@ function renderAv(){
       <td style="color:#ffffff">${fmt(tp)}</td>
       <td></td>
       <td style="color:${gc(+avgC)};font-weight:800">${avgC}%</td>
-      <td style="color:#ffffff">${fmt(tMR)}</td>
+      <td style="color:#ffffff">${_covGrp.length?cccCartHtml(gCCC,gCAR):'—'}</td>
       <td style="color:#ffffff">${fmt(tMN)}</td>
       <td>${tc?fmt(tc):'—'}</td>
       <td style="color:#ffffff;font-weight:800">${tSku!=null?tSku:'—'}</td>
