@@ -800,7 +800,7 @@ function parseWB(wb, fname) {
 
     // ---- ARTÍCULOS DISPONIBLES PARA LA VENTA (para "faltan vender") ----
     // Hoja "Base SKU": Col AO (idx 40) = código de artículo disponible, Col AP (idx 41) = descripción,
-    // Col BA (idx 52) = "SI"/"NO" (solo se incluyen los marcados "SI").
+    // Col BB (idx 53) = "SI"/"NO" (solo se incluyen los marcados "SI").
     // El proveedor de cada artículo se toma de la hoja "Base Art" (Col A = código, "Razón Social" = proveedor);
     // si no está ahí, se usa el proveedor (Col AN) de las filas vendidas de Base SKU.
     window.SKU_DISPONIBLES = [];
@@ -832,8 +832,8 @@ function parseWB(wb, fname) {
       const seen = new Set();
       for (let i = 1; i < bsRaw.length; i++) {
         const r = bsRaw[i]; if (!r || isBlank(r[40])) continue;
-        const flagBA = isBlank(r[52]) ? '' : String(r[52]).trim().toUpperCase();
-        if (flagBA !== 'SI') continue; // Col BA: solo artículos marcados "SI"
+        const flagBB = isBlank(r[53]) ? '' : String(r[53]).trim().toUpperCase();
+        if (flagBB !== 'SI') continue; // Col BB: solo artículos marcados "SI"
         const k = String(parseInt(r[40], 10));
         if (k === 'NaN' || seen.has(k)) continue;
         seen.add(k);
