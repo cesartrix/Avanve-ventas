@@ -154,6 +154,8 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'Roboto Mono',monospace;
 .hst-mtab.active{background:var(--accent);color:#0a0b0f;border-color:var(--accent);font-weight:700;}
 .hst-full{grid-column:1/-1;}
 .hst-vendor-row{cursor:pointer;transition:background 0.15s;}
+.hst-sup-row{cursor:pointer;}
+.hst-sup-row:hover td{color:var(--accent)!important;}
 .horas-grid{display:grid;grid-template-columns:1fr;gap:20px;margin-top:16px;}
 .traz-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
 @media(max-width:700px){.traz-grid{grid-template-columns:1fr;}}
@@ -1921,7 +1923,7 @@ function renderHist(idx, btn) {
             const gCumpl = gObj>0?(gProy/gObj*100).toFixed(1):0;
             const _skuG = g.filter(x=>x.cantidad_sku!=null);
             const gSku = _skuG.length ? Math.round(_skuG.reduce((a,x)=>a+x.cantidad_sku,0)/_skuG.length) : null;
-            return '<tr style="background:var(--border)"><td colspan="3" style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">'+s+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td><td></td><td style="color:var(--text);font-weight:800">'+(gSku!=null?gSku:'—')+'</td></tr>'
+            return '<tr class="hst-sup-row" data-sup="'+s.replace(/"/g,'')+'" title="Ver evolución mensual del supervisor" style="background:var(--border)"><td colspan="3" style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">📈 '+s+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td><td></td><td style="color:var(--text);font-weight:800">'+(gSku!=null?gSku:'—')+'</td></tr>'
               + g.map(x=>'<tr class="hst-vendor-row" data-cod="'+x.codigo+'" data-nom="'+(getCurName(x.codigo)||x.nombre).replace(/"/g,'')+'"><td style="color:var(--text);padding-left:10px"><span style=\'color:var(--muted);font-size:0.62rem;margin-right:4px\'>'+x.codigo+'</span>'+(getCurName(x.codigo)||x.nombre)+'</td><td>'+fmtM(x.objetivo)+'</td><td>'+fmtM(x.facturacion)+'</td><td style="color:'+gc(x.cumplimiento)+';font-weight:700">'+x.cumplimiento.toFixed(1)+'%</td><td style="color:'+(x.cobertura===null||x.cobertura===undefined?'var(--muted)':gcCov(x.cobertura))+';font-weight:700">'+(x.cobertura===null||x.cobertura===undefined?'—':x.cobertura.toFixed(1)+'%')+'</td><td style="color:var(--text)">'+(x.cantidad_sku!=null?x.cantidad_sku:'—')+'</td></tr>').join('');
           }).join('')}
         </tbody>
@@ -1933,6 +1935,9 @@ function renderHist(idx, btn) {
     row.addEventListener('click', () => {
       showVendorChart(row.dataset.cod, row.dataset.nom);
     });
+  });
+  gridEl.querySelectorAll('.hst-sup-row').forEach(row => {
+    row.addEventListener('click', () => showSupHistChart(row.dataset.sup));
   });
 }
 
@@ -2262,7 +2267,32 @@ function showVendorChart(codigo, nombre) {
     }
   });
 
-  document.getElementById('hst-chart-title').textContent = `📈 ${nombre}`;
+  drawHistChart(`📈 ${nombre}`, labels, dataCumpl, dataFact, dataCov, dataSku, false);
+}
+
+// Evolución mensual agregada de un supervisor (mismos criterios que la fila de grupo del histórico):
+// Cumplimiento = Σ proyección / Σ objetivo; Cobertura = promedio de sus vendedores; Cant. SKU = promedio por vendedor.
+function showSupHistChart(sup) {
+  if (!window.HIST || !window.HIST.length) return;
+  const labels = [], dataCumpl = [], dataFact = [], dataCov = [], dataSku = [];
+  window.HIST.forEach(h => {
+    const g = h.vendedores.filter(x => x.supervisor === sup);
+    if (!g.length) return;
+    const gObj = g.reduce((a,x)=>a+(x.objetivo||0),0);
+    const gProy = g.reduce((a,x)=>a+(x.proyeccion||0),0);
+    const gCov = g.filter(x => x.cobertura !== null && x.cobertura !== undefined);
+    const gSku = g.filter(x => x.cantidad_sku !== null && x.cantidad_sku !== undefined);
+    labels.push(h.mes);
+    dataCumpl.push(gObj > 0 ? +(gProy/gObj*100).toFixed(1) : null);
+    dataFact.push(g.reduce((a,x)=>a+(x.facturacion||0),0));
+    dataCov.push(gCov.length ? +(gCov.reduce((a,x)=>a+x.cobertura,0)/gCov.length).toFixed(1) : null);
+    dataSku.push(gSku.length ? Math.round(gSku.reduce((a,x)=>a+x.cantidad_sku,0)/gSku.length) : null);
+  });
+  drawHistChart(`📈 ${sup} (supervisor)`, labels, dataCumpl, dataFact, dataCov, dataSku, true);
+}
+
+function drawHistChart(title, labels, dataCumpl, dataFact, dataCov, dataSku, isSup) {
+  document.getElementById('hst-chart-title').textContent = title;
   document.getElementById('hst-chart-modal').classList.add('show');
   document.getElementById('hst-tgl-cumpl').checked = true;
   document.getElementById('hst-tgl-cov').checked = true;
@@ -2283,7 +2313,7 @@ function showVendorChart(codigo, nombre) {
         fill: true,
         tension: 0.35,
         pointRadius: 5,
-        pointBackgroundColor: dataCumpl.map(v => v>=100?'#00d4aa':v>=80?'#ffcc00':'#ff4545'),
+        pointBackgroundColor: dataCumpl.map(v => v===null?'#5a6072':v>=100?'#00d4aa':v>=80?'#ffcc00':'#ff4545'),
         pointBorderColor: '#0a0b0f',
         pointBorderWidth: 2,
         borderWidth: 2.5,
@@ -2333,7 +2363,7 @@ function showVendorChart(codigo, nombre) {
           bodyColor: '#e8eaf0',
           padding: 10,
           callbacks: {
-            label: (ctx) => ctx.datasetIndex === 0 ? `Cumplimiento: ${ctx.parsed.y}%` : ctx.datasetIndex === 1 ? `Cobertura: ${ctx.parsed.y===null?'—':ctx.parsed.y+'%'}` : `Cant. SKU: ${ctx.parsed.y===null?'—':ctx.parsed.y}`,
+            label: (ctx) => ctx.datasetIndex === 0 ? `Cumplimiento: ${ctx.parsed.y}%` : ctx.datasetIndex === 1 ? `Cobertura${isSup?' prom.':''}: ${ctx.parsed.y===null?'—':ctx.parsed.y+'%'}` : `Cant. SKU${isSup?' prom. x vendedor':''}: ${ctx.parsed.y===null?'—':ctx.parsed.y}`,
             afterLabel: (ctx) => ctx.datasetIndex === 0 ? `Facturado: ${fmtS(dataFact[ctx.dataIndex])}` : ''
           }
         }
