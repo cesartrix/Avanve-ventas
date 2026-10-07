@@ -309,6 +309,7 @@ tr.sup-group-sum td{
   <div class="stabs">
     <button class="stab active" onclick="showSec('avance',this)">📈 Avance</button>
     <button class="stab" onclick="showSec('cobertura',this)">🗂 Cobertura</button>
+    <button class="stab" onclick="showSec('entregas',this)">🚚 Entregas</button>
     <button class="stab" onclick="showSec('historico',this)">📅 Histórico</button>
     <button class="stab" onclick="showSec('sku',this)">📦 SKU</button>
     <button class="stab" onclick="showSec('horas',this)">⏱ Horas</button>
@@ -384,6 +385,20 @@ tr.sup-group-sum td{
       </div>
       </div>
     </div>
+    <div class="pg" id="pg-entregas">
+      <div class="kstrip" id="kpi-ent"></div>
+      <div class="cob-split">
+      <div class="panel">
+        <div class="ptitle"><span class="dot p"></span>Detalle entregas <span id="ent-fecha" style="font-family:'Roboto Mono',monospace;font-size:0.62rem;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;margin-left:6px"></span></div>
+        <div class="ts hm"><table><thead><tr><th>Vendedor</th><th>Neto facturado</th><th>Clientes</th><th>Comprob.</th><th>% del día</th></tr></thead><tbody id="tb-ent"></tbody></table></div>
+        <div class="mc" id="mc-ent"></div>
+      </div>
+      <div class="panel cob-detail-panel" id="ent-detail-panel">
+        <div class="ptitle"><span class="dot o"></span>Clientes facturados</div>
+        <div id="ent-detail"></div>
+      </div>
+      </div>
+    </div>
     <div class="pg" id="pg-sku">
       <div class="g2" style="align-items:start;">
         <div class="panel">
@@ -435,7 +450,7 @@ const SC = {'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35',
 const SL = {'MARTIN PREVENTA':'Martín Preventa','MARTIN':'Martín','CRISTIAN':'Cristian','GONZALO':'Gonzalo','MAXI':'Maxi','SIN SUPERVISOR':'Sin sup.'};
 const SUPS = Object.keys(SC);
 
-let A=[], COB=[], cur='TODOS', CH={}, skuSelectedCod=null, cobSel=null;
+let A=[], COB=[], cur='TODOS', CH={}, skuSelectedCod=null, cobSel=null, entSel=null;
 
 const fmt=v=>'$'+Math.round(v).toLocaleString('es-AR');
 const fmtS=v=>'$'+(v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v.toFixed(0));
@@ -591,6 +606,7 @@ function diasParaCalculo(hasta) {
 function applyChessApi(wb) {
   window.CHESS_APPLIED = null;
   const api = window.CHESS_API;
+  window.ENTREGAS = (api && api.entregas) || null;
   if (!api || !api.periodo || !api.facturacion) return;
   const mesApi = api.periodo.desde.slice(0, 7);
   const mesXls = excelMes(wb);
@@ -647,7 +663,7 @@ function setFinfo(base) {
   const ap = window.CHESS_APPLIED;
   if (ap && ap.generado) {
     const g = new Date(ap.generado);
-    el.textContent = `Ventas API Chess ${g.toLocaleDateString('es-AR', {day:'2-digit', month:'2-digit'})} ${g.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'})}`;
+    el.textContent = `Ventas API Chess ${g.toLocaleDateString('es-AR', {day:'2-digit', month:'2-digit'})} ${g.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit', hour12:false})}`;
     el.title = `${base} — objetivos, cobro e histórico del Excel; facturación, cobertura, SKU y día de visita de la API de Chess` +
       (ap.dias && ap.dias.fuente === 'estimado' ? ' (días de trabajo estimados: configurá el mes en el panel admin)' : '');
   } else {
@@ -1423,6 +1439,124 @@ function renderCob(){
   renderCobDetail();
 }
 
+// ===== DETALLE ENTREGAS (facturación neta del día vigente, desde la API de Chess) =====
+// window.ENTREGAS = { fecha, vendedores: { cod: { nombre, neto, comprobantes, clientes:[{id,nombre,neto,comprobantes}] } } }
+// La tabla lista todos los vendedores del Avance (los que no facturaron hoy quedan en $0) más los
+// que solo aparecen en la API (ej. MOSTRADOR), agrupados por supervisor como Cobertura.
+function entRows() {
+  const E = (window.ENTREGAS && window.ENTREGAS.vendedores) || {};
+  const rows = A.map(x => {
+    const e = E[x.codigo];
+    return { codigo: x.codigo, nombre: x.nombre, supervisor: x.supervisor,
+             neto: e ? e.neto : 0, clientes: e ? e.clientes.length : 0, comprobantes: e ? e.comprobantes : 0 };
+  });
+  Object.entries(E).forEach(([cod, e]) => {
+    if (rows.some(r => r.codigo === cod)) return;
+    rows.push({ codigo: cod, nombre: e.nombre || ('Vendedor ' + cod), supervisor: 'SIN SUPERVISOR',
+                neto: e.neto, clientes: e.clientes.length, comprobantes: e.comprobantes });
+  });
+  return filt(rows);
+}
+function renderEnt() {
+  const tb = document.getElementById('tb-ent');
+  if (!tb) return;
+  const ENT = window.ENTREGAS;
+  const fechaTxt = ENT ? new Date(ENT.fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }) : '';
+  document.getElementById('ent-fecha').textContent = fechaTxt ? '· ' + fechaTxt : '';
+  if (!ENT) {
+    document.getElementById('kpi-ent').innerHTML = '';
+    tb.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Sin datos de la API de Chess. Corré correr_ahora.bat para actualizar.</td></tr>`;
+    document.getElementById('mc-ent').innerHTML = '';
+    renderEntDetail();
+    return;
+  }
+  const base = entRows();
+  const totDia = base.reduce((s, x) => s + x.neto, 0);
+  const conEnt = base.filter(x => x.comprobantes > 0);
+  const gen = window.CHESS_API && window.CHESS_API.generado ? new Date(window.CHESS_API.generado) : null;
+  document.getElementById('kpi-ent').innerHTML =
+    `<div class="kpi"><div class="kl">Neto facturado del día</div><div class="kv kv-big">${fmt(totDia)}</div><div class="ks">${fechaTxt}</div></div>` +
+    `<div class="kpi o"><div class="kl">Vendedores con entregas</div><div class="kv">${conEnt.length}/${base.length}</div><div class="ks">facturaron hoy</div></div>` +
+    `<div class="kpi p"><div class="kl">Clientes</div><div class="kv">${base.reduce((s, x) => s + x.clientes, 0)}</div><div class="ks">con comprobante</div></div>` +
+    `<div class="kpi y"><div class="kl">Comprobantes</div><div class="kv">${base.reduce((s, x) => s + x.comprobantes, 0)}</div><div class="ks">${gen ? 'act. ' + gen.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' hs' : ''}</div></div>`;
+  const supOrder = cur === 'TODOS' ? [...SUPS] : [cur];
+  let rows = '', mcRows = '';
+  supOrder.forEach(sup => {
+    const group = base.filter(x => x.supervisor === sup).sort((a, b) => b.neto - a.neto);
+    if (!group.length) return;
+    const col = sc(sup);
+    const gNeto = group.reduce((s, x) => s + x.neto, 0);
+    rows += `<tr class="sup-group-hdr"><td colspan="5" style="color:${col};border-bottom-color:${col}">
+      <span style="display:inline-flex;align-items:center;gap:8px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}
+        <span style="font-family:'Roboto Mono',monospace;font-size:0.6rem;font-weight:400;color:var(--muted)">${group.length} vendedores</span>
+      </span></td></tr>`;
+    mcRows += `<div style="display:flex;align-items:center;gap:7px;padding:8px 4px 4px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${col}">
+      <span style="width:7px;height:7px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}</div>`;
+    group.forEach(x => {
+      const pct = totDia > 0 ? x.neto / totDia * 100 : 0;
+      const vSel = entSel === x.codigo ? ' sel' : '';
+      const dim = x.comprobantes ? '' : 'color:var(--muted);';
+      const netoCol = x.neto < 0 ? 'color:var(--danger)' : x.comprobantes ? 'color:var(--text);font-weight:700' : 'color:var(--muted)';
+      rows += `<tr class="hst-vendor-row cob-click${vSel}" onclick="selectEnt('${x.codigo}')" title="Ver clientes facturados"><td class="nc" style="${dim}"><span style="color:var(--muted);font-size:0.62rem;margin-right:4px">${x.codigo}</span>${x.nombre}</td><td style="${netoCol}">${fmt(x.neto)}</td><td style="${dim}">${x.clientes}</td><td style="${dim}">${x.comprobantes}</td><td><div class="mbw"><div class="mbbg"><div class="mbf" style="width:${Math.max(0, Math.min(pct * 4, 100))}%;background:${col}"></div></div><span>${pct.toFixed(1)}%</span></div></td></tr>`;
+      mcRows += `<div class="mcard cob-click${vSel}" onclick="selectEnt('${x.codigo}')" style="border-left:3px solid ${col}"><div class="mcnm"><span style="color:var(--muted);font-size:0.62rem;margin-right:4px">${x.codigo}</span>${x.nombre}</div><div class="mcr"><span>Neto facturado</span><span style="${netoCol}">${fmt(x.neto)}</span></div><div class="mcr"><span>Clientes</span><span>${x.clientes}</span></div><div class="mcr"><span>Comprobantes</span><span>${x.comprobantes}</span></div></div>`;
+    });
+    rows += `<tr class="sup-group-sum" style="font-weight:700;background:#1a1d28">
+      <td style="color:#ffffff;font-weight:800">${sl(sup)}</td>
+      <td style="color:#ffffff">${fmt(gNeto)}</td>
+      <td style="color:#ffffff">${group.reduce((s, x) => s + x.clientes, 0)}</td>
+      <td style="color:#ffffff">${group.reduce((s, x) => s + x.comprobantes, 0)}</td>
+      <td style="color:var(--accent)">${totDia > 0 ? (gNeto / totDia * 100).toFixed(1) : '0.0'}%</td></tr>`;
+  });
+  tb.innerHTML = rows;
+  document.getElementById('mc-ent').innerHTML = mcRows;
+  renderEntDetail();
+}
+function selectEnt(cod) {
+  entSel = (entSel === cod) ? null : cod;
+  renderEnt();
+  const pnl = document.getElementById('ent-detail-panel');
+  if (!pnl) return;
+  let top = 0;
+  document.querySelectorAll('header, .supbar, .stabs').forEach(h => {
+    const cs = getComputedStyle(h);
+    if (cs.position === 'sticky' || cs.position === 'fixed') top = Math.max(top, h.getBoundingClientRect().bottom);
+  });
+  if (window.innerWidth <= 900) {
+    if (entSel) window.scrollTo({ top: pnl.getBoundingClientRect().top + window.scrollY - top - 8, behavior: 'smooth' });
+  } else {
+    if (top > 0) pnl.style.setProperty('--cob-sticky-top', (top + 8) + 'px');
+    pnl.scrollTop = 0;
+  }
+}
+function renderEntDetail() {
+  const el = document.getElementById('ent-detail');
+  if (!el) return;
+  const empty = msg => `<div style="text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">${msg}</div>`;
+  const base = window.ENTREGAS ? entRows() : [];
+  if (entSel && !base.some(x => x.codigo === entSel)) entSel = null;
+  if (!entSel) { el.innerHTML = empty('Elegí un vendedor de la tabla para ver los clientes facturados en el día.'); return; }
+  const v = base.find(x => x.codigo === entSel);
+  const e = window.ENTREGAS.vendedores[entSel];
+  const col = sc(v.supervisor);
+  const header = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;"><span style="font-family:'Roboto Mono',monospace;font-size:0.65rem;color:var(--muted)">${v.codigo}</span><span style="font-weight:700">${v.nombre}</span>${tag(v.supervisor)}</div>`;
+  if (!e || !e.clientes.length) { el.innerHTML = header + empty('No facturó en el día.'); return; }
+  const max = Math.max(...e.clientes.map(c => Math.abs(c.neto)), 1);
+  const resumen = `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted);margin-bottom:10px"><span style="color:var(--text);font-weight:700">${fmt(e.neto)}</span> · ${e.clientes.length} clientes · ${e.comprobantes} comprobantes</div>`;
+  const cabecera = `<div style="display:flex;justify-content:space-between;font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;padding:4px 0;border-bottom:1px solid var(--border)"><span>Cliente</span><span>Neto facturado</span></div>`;
+  const filas = e.clientes.map(c => `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.76rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${(c.nombre || '').replace(/"/g, '&quot;')}"><span style="font-family:'Roboto Mono',monospace;font-size:0.6rem;color:var(--muted);margin-right:5px">${c.id}</span>${c.nombre || '(sin nombre)'}</div>
+        <div class="mbw" style="margin-top:4px;"><div class="mbbg"><div class="mbf${c.neto < 0 ? ' d' : ''}" style="width:${Math.max(3, Math.abs(c.neto) * 100 / max)}%;${c.neto < 0 ? '' : 'background:' + col}"></div></div></div>
+      </div>
+      <div style="text-align:right;min-width:92px;">
+        <div style="font-family:'Roboto Mono',monospace;font-weight:700;color:${c.neto < 0 ? 'var(--danger)' : 'var(--text)'}">${fmt(c.neto)}</div>
+        <div style="font-family:'Roboto Mono',monospace;font-size:0.58rem;color:var(--muted)">${c.comprobantes} comprob.</div>
+      </div>
+    </div>`).join('');
+  el.innerHTML = header + resumen + cabecera + filas;
+}
+
 // ===== COBERTURA: DESGLOSE DE CCC POR PROVEEDOR (panel al costado) =====
 // cobSel = 'V:<codigo>' (vendedor) o 'S:<supervisor>' (suma de sus vendedores). Toggle.
 function selectCob(key){
@@ -1503,7 +1637,7 @@ function renderCobDetail(){
 function buildRanking(){const d=filt(A).sort((a,b)=>b.cumplimiento-a.cumplimiento);const m=['🥇','🥈','🥉','4️⃣','5️⃣'];document.getElementById('rtop').innerHTML=d.slice(0,5).map((x,i)=>`<div class="sr"><span class="sn">${m[i]} <span style="color:var(--muted);font-size:0.72rem">${x.codigo}</span> ${x.nombre} ${tag(x.supervisor,true)}</span><span class="sv">${x.cumplimiento}%</span></div>`).join('');document.getElementById('rbot').innerHTML=d.slice(-5).reverse().map(x=>`<div class="sr"><span class="sn" style="color:#ff4545"><span style="color:#ff454599;font-size:0.72rem">${x.codigo}</span> ${x.nombre} ${tag(x.supervisor,true)}</span><span style="font-family:'Roboto Mono',monospace;color:#ff4545">${x.cumplimiento}%</span></div>`).join('');}
 function buildSupCards(){document.getElementById('supcards').innerHTML=SUPS.map(s=>{const d=A.filter(x=>x.supervisor===s);if(!d.length)return'';const sub2=(window.SUP_SUBTOTALS||{})[s];const tf=sub2?sub2.facturacion:d.reduce((a,x)=>a+x.facturacion,0),to=sub2?sub2.objetivo:d.reduce((a,x)=>a+x.objetivo,0),tp2=sub2?sub2.proyeccion:d.reduce((a,x)=>a+x.proyeccion,0),avgC=(to>0?tp2/to*100:0).toFixed(1),ok=d.filter(x=>x.cumplimiento>=100).length,col=sc(s);return`<div class="scard" style="border-left-color:${col}"><div class="scnm" style="color:${col}">${sl(s)}</div><div class="scr"><span>Vendedores</span><span>${d.length}</span></div><div class="scr"><span>Facturado</span><span>${fmt(tf)}</span></div><div class="scr"><span>Objetivo</span><span>${fmt(to)}</span></div><div class="scr"><span>Cumpl. prom.</span><span style="color:${gc(+avgC)}">${avgC}%</span></div><div class="scr"><span>En objetivo</span><span style="color:#00d4aa">${ok}/${d.length}</span></div></div>`;}).join('');}
 
-function refresh(){buildKpiAv();buildKpiCob();buildCC();buildCF();buildCCob();buildCCCC();buildDist();buildCSF();buildCSC();renderAv();renderCob();buildRanking();buildSupCards();renderSku();}
+function refresh(){buildKpiAv();buildKpiCob();buildCC();buildCF();buildCCob();buildCCCC();buildDist();buildCSF();buildCSC();renderAv();renderCob();buildRanking();buildSupCards();renderSku();renderEnt();}
 
 // ===== SKU POR VENDEDOR / PROVEEDOR: UI =====
 function renderSku(){
