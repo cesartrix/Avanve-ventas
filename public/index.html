@@ -543,7 +543,119 @@ async function loadDiasCfg() {
     if (r.ok) { window.DIAS_CFG = await r.json(); renderDias(); }
   } catch (_) {}
 }
-loadDiasCfg();
+window.DIAS_PROMISE = loadDiasCfg();
+
+// ===== Datos de la API de ChessERP (data/chess_api.json, generado por chess_sync.py) =====
+// Reemplazan a los del Excel: facturación (acumulada y del día), cobertura, CCC por proveedor,
+// cantidad de SKU / desglose por proveedor y día de visita. Del Excel se siguen tomando
+// objetivo, cobro, histórico, horas y artículos disponibles. Proyección, cumplimiento, avance
+// y medias se recalculan con la facturación de la API y los días de trabajo.
+window.CHESS_API = null;
+window.CHESS_APPLIED = null;
+async function loadChessApi() {
+  try {
+    const r = await fetch('/api/chess-data', { cache: 'no-store' });
+    if (r.ok) window.CHESS_API = await r.json();
+  } catch (_) {}
+}
+const MES_ABR = {ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,SET:9,OCT:10,NOV:11,DIC:12};
+function excelMes(wb) {
+  // Período del Excel: "(001) 01 OCT 2026 - 06 OCT 2026" (Base SKU A2) o "01 OCT 2026 - ..." (X Ruta C3)
+  const cands = [];
+  try { const r = XLSX.utils.sheet_to_json(wb.Sheets['Base SKU'], {header:1, defval:null}); cands.push(r[1] && r[1][0]); } catch (_) {}
+  try { const r = XLSX.utils.sheet_to_json(wb.Sheets['X Ruta'], {header:1, defval:null}); for (let i = 0; i < 6; i++) cands.push(r[i] && r[i][2]); } catch (_) {}
+  for (const c of cands) {
+    const m = String(c || '').toUpperCase().match(/(\d{1,2})\s+([A-Z]{3})\s+(\d{4})/);
+    if (m && MES_ABR[m[2]]) return `${m[3]}-${String(MES_ABR[m[2]]).padStart(2, '0')}`;
+  }
+  return null;
+}
+function diasParaCalculo(hasta) {
+  // Días de trabajo para proyección/medias: panel admin; si no, total del Excel y lunes a sábado hasta la fecha.
+  const cfg = calcDiasMes(window.DIAS_CFG, hasta);
+  if (cfg) return cfg;
+  const mes = hasta.slice(0, 7);
+  const [y, m] = mes.split('-').map(Number);
+  const nd = new Date(y, m, 0).getDate();
+  let lunSab = 0, lunSabHasta = 0;
+  for (let d = 1; d <= nd; d++) {
+    const iso = `${mes}-${String(d).padStart(2, '0')}`;
+    if (new Date(iso + 'T12:00:00').getDay() === 0) continue;
+    lunSab++; if (iso <= hasta) lunSabHasta++;
+  }
+  const e = window.DIAS_EXCEL;
+  const total = (e && +e.mes) || lunSab;
+  const trab = Math.min(lunSabHasta, total);
+  return { mes: total, trab, rest: total - trab, fuente: 'estimado' };
+}
+function applyChessApi(wb) {
+  window.CHESS_APPLIED = null;
+  const api = window.CHESS_API;
+  if (!api || !api.periodo || !api.facturacion) return;
+  const mesApi = api.periodo.desde.slice(0, 7);
+  const mesXls = excelMes(wb);
+  if (mesXls && mesXls !== mesApi) {
+    console.warn(`Datos API (${mesApi}) y Excel (${mesXls}) son de meses distintos: se usan solo los del Excel.`);
+    window.CHESS_APPLIED = { skip: `API ${mesApi} ≠ Excel ${mesXls}` };
+    return;
+  }
+  const dias = diasParaCalculo(api.periodo.hasta);
+  const r0 = v => Math.round(v || 0);
+  // ---- Avance: facturación + recálculo de derivados ----
+  A.forEach(x => {
+    const f = api.facturacion[x.codigo] || { facturacion: 0, facturacion_dia: 0 };
+    x.facturacion = r0(f.facturacion);
+    x.facturacion_dia = r0(f.facturacion_dia);
+    x.avance_pct = x.objetivo ? +(x.facturacion / x.objetivo * 100).toFixed(1) : 0;
+    const mr = dias.trab > 0 ? x.facturacion / dias.trab : 0;
+    x.media_real = r0(mr);
+    x.proyeccion = mr * dias.mes;
+    x.cumplimiento = x.objetivo ? +(x.proyeccion / x.objetivo * 100).toFixed(1) : 0;
+    x.media_nec = dias.rest > 0 ? r0((x.objetivo - x.facturacion) / dias.rest) : 0;
+    if (api.sku_cur) x.cantidad_sku = api.sku_cur[x.codigo] ?? 0;
+    if (api.dia_visita) x.dia_visita = api.dia_visita[x.codigo] || null;
+  });
+  // Subtotales por supervisor y total general = sumas de vendedores (igual que en el Excel)
+  Object.keys(window.SUP_SUBTOTALS || {}).forEach(sup => {
+    const g = A.filter(x => x.supervisor === sup);
+    window.SUP_SUBTOTALS[sup].facturacion = r0(g.reduce((s, x) => s + x.facturacion, 0));
+    window.SUP_SUBTOTALS[sup].proyeccion = g.reduce((s, x) => s + x.proyeccion, 0);
+  });
+  if (window.GRAND_TOTAL) {
+    window.GRAND_TOTAL.facturacion = r0(A.reduce((s, x) => s + x.facturacion, 0));
+    window.GRAND_TOTAL.proyeccion = A.reduce((s, x) => s + x.proyeccion, 0);
+  }
+  // ---- Cobertura ----
+  if (Array.isArray(api.cobertura)) {
+    const byCod = {}; api.cobertura.forEach(c => byCod[c.codigo] = c);
+    COB.forEach(c => {
+      const a = byCod[c.codigo]; if (!a) return;
+      c.cobertura = a.cobertura; c.ccc = a.ccc; c.ccc_faltante = a.ccc_faltante; c.cartera = a.cartera;
+    });
+  }
+  if (api.cob_prov) window.COB_PROV = api.cob_prov;
+  // ---- SKU ----
+  if (api.sku_cur) { window.SKU_CUR = {}; Object.entries(api.sku_cur).forEach(([k, v]) => window.SKU_CUR[k] = { cantidad: v }); }
+  if (api.sku_total_empresa != null) window.SKU_TOTAL_EMPRESA = api.sku_total_empresa;
+  if (api.sku_prov) window.SKU_PROV = api.sku_prov;
+  if (api.sku_prov_detail) window.SKU_PROV_DETAIL = api.sku_prov_detail;
+  if (api.dia_visita) window.DIA_VISITA = api.dia_visita;
+  window.CHESS_APPLIED = { generado: api.generado, dias };
+}
+function setFinfo(base) {
+  const el = document.getElementById('finfo');
+  const ap = window.CHESS_APPLIED;
+  if (ap && ap.generado) {
+    const g = new Date(ap.generado);
+    el.textContent = `Ventas API Chess ${g.toLocaleDateString('es-AR', {day:'2-digit', month:'2-digit'})} ${g.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'})}`;
+    el.title = `${base} — objetivos, cobro e histórico del Excel; facturación, cobertura, SKU y día de visita de la API de Chess` +
+      (ap.dias && ap.dias.fuente === 'estimado' ? ' (días de trabajo estimados: configurá el mes en el panel admin)' : '');
+  } else {
+    el.textContent = base;
+    el.title = ap && ap.skip ? `Datos de la API no aplicados: ${ap.skip}` : '';
+  }
+  el.className = 'finfo ok';
+}
 
 function parseWB(wb, fname) {
   try {
@@ -1056,6 +1168,9 @@ function parseWB(wb, fname) {
     }
     window.SUP_SUBTOTALS = SUP_SUBTOTALS;
 
+    // ===== DATOS DE LA API DE CHESS (si hay y son del mismo mes que el Excel) =====
+    applyChessApi(wb);
+
     // ===== PARSE PROMEDIO HORAS =====
     window.HORAS = [];
     const horasWS = wb.Sheets['Promedio Horas'];
@@ -1087,8 +1202,7 @@ function parseWB(wb, fname) {
       buildHorasChart();
     }
 
-    document.getElementById('finfo').textContent = `✓ ${fname} · ${today.toLocaleDateString('es-AR')}`;
-    document.getElementById('finfo').className = 'finfo ok';
+    setFinfo(`✓ ${fname} · ${today.toLocaleDateString('es-AR')}`);
     document.getElementById('reloadbtn').style.display = 'inline-flex';
     document.getElementById('exportbtn').style.display = 'inline-flex';
     cur = 'TODOS';
@@ -2628,6 +2742,7 @@ function toggleAvcDataset(idx, visible) {
 
 // ===== INIT =====
 async function autoLoadFromServer() {
+  const apiPromise = loadChessApi();
   try {
     const r = await fetch('/api/data-url');
     if (r.status === 404) { showErr('No hay datos cargados. Pedile al administrador que suba el Excel.'); return; }
@@ -2642,8 +2757,9 @@ async function autoLoadFromServer() {
     document.getElementById('loading').style.display='flex';
     document.getElementById('ldtxt').textContent='Procesando datos...';
     const wb = XLSX.read(new Uint8Array(arrayBuffer), {type:'array'});
+    await Promise.all([window.DIAS_PROMISE, apiPromise]);
     parseWB(wb, 'ventas-data.xlsx');
-    document.getElementById('finfo').textContent = 'Actualizado ' + new Date(info.uploadedAt||Date.now()).toLocaleDateString('es-AR');
+    setFinfo('Actualizado ' + new Date(info.uploadedAt||Date.now()).toLocaleDateString('es-AR'));
   } catch(err) { showErr('Error al cargar datos: ' + err.message); }
 }
 
