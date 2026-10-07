@@ -102,6 +102,22 @@
   .progress-bar { height: 100%; background: var(--accent2); border-radius: 2px; width: 0%; transition: width 0.3s ease; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .spin { display: inline-block; animation: spin 0.8s linear infinite; }
+  /* Días de trabajo */
+  .dias-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px; }
+  .dias-head h2 { font-family: var(--head); font-size: 1.05rem; font-weight: 800; }
+  .mes-nav { display:flex; align-items:center; gap:6px; }
+  .mes-nav button { background: var(--bg); border:1px solid var(--border); color: var(--text); border-radius:6px; width:30px; height:30px; cursor:pointer; font-family: var(--mono); }
+  .mes-nav button:hover { border-color: var(--accent); }
+  .mes-lbl { font-size:0.8rem; min-width:118px; text-align:center; text-transform:capitalize; }
+  .cal { display:grid; grid-template-columns: repeat(7, 1fr); gap:4px; }
+  .cal .dow { font-size:0.6rem; color: var(--muted); text-align:center; text-transform:uppercase; letter-spacing:0.08em; padding-bottom:2px; }
+  .cal button { aspect-ratio: 1 / 1; border-radius:6px; border:1px solid var(--border); background: var(--bg); color: var(--muted); font-family: var(--mono); font-size:0.8rem; cursor:pointer; }
+  .cal button.on { background: #00d4aa22; border-color: #00d4aa80; color: var(--accent); font-weight:500; }
+  .cal button.hoy { outline: 1px solid var(--accent2); outline-offset: 1px; }
+  .cal .vacio { visibility:hidden; }
+  .dias-resumen { display:flex; justify-content:space-between; font-size:0.72rem; color: var(--muted); margin-top:12px; }
+  .dias-resumen strong { color: var(--text); font-size:0.85rem; }
+  .dias-nota { font-size:0.65rem; color: var(--muted); margin-top:6px; line-height:1.5; }
 </style>
 </head>
 <body>
@@ -145,6 +161,24 @@
     <div class="status-bar" id="status-bar"></div>
 
     <hr class="divider">
+    <div class="dias-head">
+      <h2>Días de <span style="color:var(--accent)">trabajo</span></h2>
+      <div class="mes-nav">
+        <button onclick="cambiarMes(-1)" aria-label="Mes anterior">‹</button>
+        <span class="mes-lbl" id="mes-lbl">—</span>
+        <button onclick="cambiarMes(1)" aria-label="Mes siguiente">›</button>
+      </div>
+    </div>
+    <div class="cal" id="cal"></div>
+    <div class="dias-resumen">
+      <span>Días de trabajo del mes: <strong id="dias-total">—</strong></span>
+      <span id="dias-estado"></span>
+    </div>
+    <div class="dias-nota">Tocá un día para marcarlo o desmarcarlo (ej. feriados). Si el mes nunca se guardó, se proponen de lunes a sábado.</div>
+    <button class="btn" id="dias-btn" onclick="guardarDias()">Guardar días del mes</button>
+    <div class="status-bar" id="dias-status"></div>
+
+    <hr class="divider">
     <a href="/index.html" class="nav-link">→ Ver Dashboard</a>
   </div>
 </div>
@@ -164,6 +198,7 @@
     document.getElementById('login-section').style.display = 'none';
     document.getElementById('app-section').style.display = 'block';
     loadCurrentInfo();
+    cargarDias();
   }
 
   async function loadCurrentInfo() {
@@ -262,6 +297,87 @@
   function hideStatus() { document.getElementById('status-bar').className = 'status-bar'; }
   function showProgress(pct) { document.getElementById('progress-wrap').classList.add('show'); document.getElementById('progress-bar').style.width = pct + '%'; }
   function hideProgress() { document.getElementById('progress-wrap').classList.remove('show'); document.getElementById('progress-bar').style.width = '0%'; }
+
+  // ===== Días de trabajo por mes =====
+  const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const hoyAR = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }); // AAAA-MM-DD
+  let diasCfg = {};            // lo guardado en el servidor
+  let mesSel = hoyAR().slice(0, 7);
+  let diasSel = new Set();     // días marcados del mes que se está editando
+  let diasDirty = false;
+
+  const pad = n => String(n).padStart(2, '0');
+  function diasDelMes(mes) {
+    const [y, m] = mes.split('-').map(Number);
+    const n = new Date(y, m, 0).getDate();
+    return Array.from({ length: n }, (_, i) => `${mes}-${pad(i + 1)}`);
+  }
+  const dow = iso => new Date(iso + 'T12:00:00').getDay(); // 0 = domingo
+
+  async function cargarDias() {
+    try {
+      const r = await fetch('/api/dias', { cache: 'no-store' });
+      diasCfg = r.ok ? await r.json() : {};
+    } catch { diasCfg = {}; }
+    elegirMes(mesSel);
+  }
+
+  function elegirMes(mes) {
+    mesSel = mes;
+    const guardado = Array.isArray(diasCfg[mes]);
+    diasSel = new Set(guardado ? diasCfg[mes] : diasDelMes(mes).filter(d => dow(d) !== 0));
+    diasDirty = !guardado;
+    renderCal();
+  }
+
+  function cambiarMes(delta) {
+    if (diasDirty && Array.isArray(diasCfg[mesSel]) && !confirm('Hay cambios sin guardar en este mes. ¿Descartarlos?')) return;
+    const [y, m] = mesSel.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    elegirMes(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
+  }
+
+  function toggleDia(iso) {
+    diasSel.has(iso) ? diasSel.delete(iso) : diasSel.add(iso);
+    diasDirty = true;
+    renderCal();
+  }
+
+  function renderCal() {
+    const [y, m] = mesSel.split('-').map(Number);
+    document.getElementById('mes-lbl').textContent = `${MESES[m - 1]} ${y}`;
+    const dias = diasDelMes(mesSel);
+    const hoy = hoyAR();
+    const offset = (dow(dias[0]) + 6) % 7; // semana empieza en lunes
+    let h = ['Lu','Ma','Mi','Ju','Vi','Sá','Do'].map(x => `<div class="dow">${x}</div>`).join('');
+    h += '<div class="vacio"></div>'.repeat(offset);
+    for (const d of dias) {
+      const cls = [diasSel.has(d) ? 'on' : '', d === hoy ? 'hoy' : ''].join(' ');
+      h += `<button class="${cls}" onclick="toggleDia('${d}')" title="${d}">${Number(d.slice(8))}</button>`;
+    }
+    document.getElementById('cal').innerHTML = h;
+    document.getElementById('dias-total').textContent = diasSel.size;
+    const guardado = Array.isArray(diasCfg[mesSel]);
+    document.getElementById('dias-estado').textContent =
+      !guardado ? 'Sin guardar (propuesta)' : diasDirty ? 'Cambios sin guardar' : `Guardado ✓`;
+  }
+
+  async function guardarDias() {
+    const btn = document.getElementById('dias-btn');
+    const st = document.getElementById('dias-status');
+    btn.disabled = true; btn.textContent = '⏳ Guardando…';
+    try {
+      const dias = [...diasSel].sort();
+      const data = await postJSON('/api/dias?pwd=' + encodeURIComponent(adminPassword),
+        JSON.stringify({ mes: mesSel, dias }), { 'Content-Type': 'application/json' });
+      diasCfg[mesSel] = dias; diasDirty = false; renderCal();
+      st.className = 'status-bar show ok'; st.innerHTML = `✅ Guardado: ${data.total} días de trabajo en ${document.getElementById('mes-lbl').textContent}`;
+    } catch (err) {
+      st.className = 'status-bar show err'; st.innerHTML = '❌ Error: ' + err.message;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Guardar días del mes';
+    }
+  }
 </script>
 </body>
 </html>
