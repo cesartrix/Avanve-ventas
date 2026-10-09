@@ -839,14 +839,15 @@ function parseLegacyWB(wb) {
       // Celda AD3 (fila 3, columna AD) = SKU general de la empresa en ese mes
       const ad3 = hRaw[2] ? hRaw[2][29] : null;
       const skuGeneral = (typeof ad3 === 'number' && isFinite(ad3)) ? ad3 : null;
-      if (vendedores.length) window.HIST.push({ mes, vendedores, skuGeneral });
+      const mIdx = meses.findIndex(m => mes.toLowerCase().includes(m.toLowerCase()));
+      const key = mIdx >= 0 ? `${HIST_EXCEL_ANIO}-${String(mIdx + 1).padStart(2, '0')}` : null;
+      if (vendedores.length) window.HIST.push({ mes, key, vendedores, skuGeneral, fuente: 'excel' });
     }
     window.HIST.sort((a,b) => {
       const ai = meses.findIndex(m => a.mes.toLowerCase().includes(m.toLowerCase()));
       const bi = meses.findIndex(m => b.mes.toLowerCase().includes(m.toLowerCase()));
       return ai - bi;
     });
-    buildHistorico();
   } catch (err) { console.warn('No se pudo leer el histórico del Excel:', err); }
 }
 
@@ -1821,9 +1822,9 @@ function renderHist(idx, btn) {
             const gObj = g.reduce((a,x)=>a+x.objetivo,0);
             const gProy = g.reduce((a,x)=>a+x.proyeccion,0);
             const gCumpl = gObj>0?(gProy/gObj*100).toFixed(1):0;
-            const _skuG = g.filter(x=>x.cantidad_sku!=null);
-            const gSku = _skuG.length ? Math.round(_skuG.reduce((a,x)=>a+x.cantidad_sku,0)/_skuG.length) : null;
-            return '<tr class="hst-sup-row" data-sup="'+s.replace(/"/g,'')+'" title="Ver evolución mensual del supervisor" style="background:var(--border)"><td colspan="3" style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">📈 '+s+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td><td></td><td style="color:var(--text);font-weight:800">'+(gSku!=null?gSku:'—')+'</td></tr>'
+            const _sg = skuGrupoHist(h, g);
+            const gSku = _sg.v;
+            return '<tr class="hst-sup-row" data-sup="'+s.replace(/"/g,'')+'" title="Ver evolución mensual del supervisor" style="background:var(--border)"><td colspan="3" style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">📈 '+s+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td><td></td><td style="color:var(--text);font-weight:800">'+(gSku!=null?(_sg.exacto?gSku:'<span title="Promedio por vendedor: este mes no tiene el detalle de artículos de la API">'+gSku+' <small style=\'color:var(--muted)\'>prom.</small></span>'):'—')+'</td></tr>'
               + g.map(x=>'<tr class="hst-vendor-row" data-cod="'+x.codigo+'" data-nom="'+(getCurName(x.codigo)||x.nombre).replace(/"/g,'')+'"><td style="color:var(--text);padding-left:10px"><span style=\'color:var(--muted);font-size:0.62rem;margin-right:4px\'>'+x.codigo+'</span>'+(getCurName(x.codigo)||x.nombre)+'</td><td>'+fmtM(x.objetivo)+'</td><td>'+fmtM(x.facturacion)+'</td><td style="color:'+gc(x.cumplimiento)+';font-weight:700">'+x.cumplimiento.toFixed(1)+'%</td><td style="color:'+(x.cobertura===null||x.cobertura===undefined?'var(--muted)':gcCov(x.cobertura))+';font-weight:700">'+(x.cobertura===null||x.cobertura===undefined?'—':x.cobertura.toFixed(1)+'%')+'</td><td style="color:var(--text)">'+(x.cantidad_sku!=null?x.cantidad_sku:'—')+'</td></tr>').join('');
           }).join('')}
         </tbody>
@@ -2174,7 +2175,8 @@ function showVendorChart(codigo, nombre) {
 }
 
 // Evolución mensual agregada de un supervisor (mismos criterios que la fila de grupo del histórico):
-// Cumplimiento = Σ proyección / Σ objetivo; Cobertura = promedio de sus vendedores; Cant. SKU = promedio por vendedor.
+// Cumplimiento = Σ proyección / Σ objetivo; Cobertura = promedio de sus vendedores;
+// Cant. SKU = artículos distintos del grupo (meses con detalle de la API) o promedio por vendedor (meses sin detalle).
 function showSupHistChart(sup) {
   if (!window.HIST || !window.HIST.length) return;
   const labels = [], dataCumpl = [], dataFact = [], dataCov = [], dataSku = [];
@@ -2184,12 +2186,11 @@ function showSupHistChart(sup) {
     const gObj = g.reduce((a,x)=>a+(x.objetivo||0),0);
     const gProy = g.reduce((a,x)=>a+(x.proyeccion||0),0);
     const gCov = g.filter(x => x.cobertura !== null && x.cobertura !== undefined);
-    const gSku = g.filter(x => x.cantidad_sku !== null && x.cantidad_sku !== undefined);
     labels.push(h.mes);
     dataCumpl.push(gObj > 0 ? +(gProy/gObj*100).toFixed(1) : null);
     dataFact.push(g.reduce((a,x)=>a+(x.facturacion||0),0));
     dataCov.push(gCov.length ? +(gCov.reduce((a,x)=>a+x.cobertura,0)/gCov.length).toFixed(1) : null);
-    dataSku.push(gSku.length ? Math.round(gSku.reduce((a,x)=>a+x.cantidad_sku,0)/gSku.length) : null);
+    dataSku.push(skuGrupoHist(h, g).v);
   });
   drawHistChart(`📈 ${sup} (supervisor)`, labels, dataCumpl, dataFact, dataCov, dataSku, true);
 }
@@ -2266,7 +2267,7 @@ function drawHistChart(title, labels, dataCumpl, dataFact, dataCov, dataSku, isS
           bodyColor: '#e8eaf0',
           padding: 10,
           callbacks: {
-            label: (ctx) => ctx.datasetIndex === 0 ? `Cumplimiento: ${ctx.parsed.y}%` : ctx.datasetIndex === 1 ? `Cobertura${isSup?' prom.':''}: ${ctx.parsed.y===null?'—':ctx.parsed.y+'%'}` : `Cant. SKU${isSup?' prom. x vendedor':''}: ${ctx.parsed.y===null?'—':ctx.parsed.y}`,
+            label: (ctx) => ctx.datasetIndex === 0 ? `Cumplimiento: ${ctx.parsed.y}%` : ctx.datasetIndex === 1 ? `Cobertura${isSup?' prom.':''}: ${ctx.parsed.y===null?'—':ctx.parsed.y+'%'}` : `Cant. SKU${isSup?' del grupo':''}: ${ctx.parsed.y===null?'—':ctx.parsed.y}`,
             afterLabel: (ctx) => ctx.datasetIndex === 0 ? `Facturado: ${fmt(dataFact[ctx.dataIndex])}` : ''
           }
         }
@@ -2509,6 +2510,7 @@ async function autoLoadFromServer() {
 
 // Histórico mensual y artículos disponibles: del último Excel completo, en segundo plano.
 async function loadLegacyExcel() {
+  const mensualP = loadMensual();
   try {
     const r = await fetch('/api/data-url');
     if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -2516,11 +2518,70 @@ async function loadLegacyExcel() {
     const fr = await fetch(info.url + '?t=' + Date.now());
     if (!fr.ok) throw new Error('HTTP ' + fr.status);
     parseLegacyWB(XLSX.read(new Uint8Array(await fr.arrayBuffer()), {type:'array'}));
-  } catch (err) { console.warn('Histórico no disponible:', err); }
+  } catch (err) { console.warn('Histórico del Excel no disponible:', err); }
+  await mensualP;
+  completarHistorico();
   if (!window.HIST || !window.HIST.length) {
     const g = document.getElementById('hst-grid');
     if (g) g.innerHTML = '<div class="hst-card hst-full" style="text-align:center;color:var(--muted);padding:40px">No hay histórico disponible.</div>';
+    return;
   }
+  buildHistorico();
+}
+
+// ===== HISTÓRICO DESDE LA API (meses cerrados: data/chess_api_mensual/AAAA-MM.json) =====
+// Las hojas "Historico <Mes>" del Excel viejo son de 2026 (enero a septiembre).
+const HIST_EXCEL_ANIO = 2026;
+window.MENSUAL = {};
+async function loadMensual() {
+  try {
+    const r = await fetch('/api/chess-mensual', { cache: 'no-store' });
+    if (r.ok) window.MENSUAL = await r.json() || {};
+  } catch (_) {}
+}
+// Une el histórico del Excel con los meses cerrados de la API:
+//  · meses del Excel: se les agrega la lista de artículos por vendedor (sku_arts) para el SKU del grupo;
+//  · meses que no están en el Excel (octubre 2026 en adelante): se arman con la API + los objetivos del admin.
+function completarHistorico() {
+  window.HIST = window.HIST || [];
+  const M = window.MENSUAL || {};
+  const hoyMes = hoyAR().slice(0, 7);
+  window.HIST.forEach(h => { if (h.key && M[h.key]) h.arts = M[h.key].sku_arts || null; });
+  Object.keys(M).sort().forEach(key => {
+    if (key >= hoyMes || window.HIST.some(h => h.key === key)) return;
+    const m = M[key];
+    const objs = (window.OBJ_CFG || {})[key];
+    if (!objs || !Array.isArray(objs.vendedores)) { console.warn(`Histórico ${key}: no hay objetivos cargados para ese mes`); return; }
+    const covBy = {}; (m.cobertura || []).forEach(c => covBy[String(c.codigo)] = c);
+    const vendedores = objs.vendedores.map(v => {
+      const cod = String(v.codigo), obj = +v.objetivo || 0, fac = +((m.facturacion || {})[cod] || 0);
+      const cov = covBy[cod];
+      return {
+        codigo: cod, nombre: String(v.nombre || '').trim(),
+        supervisor: getCurSup(cod) || normSup(v.supervisor) || 'SIN SUPERVISOR',
+        objetivo: obj, facturacion: fac, proyeccion: fac,              // mes cerrado: proyección = facturación final
+        cumplimiento: obj > 0 ? fac / obj * 100 : 0,
+        cobertura: cov ? +cov.cobertura : null, ccc: cov ? cov.ccc : null, cartera: cov ? cov.cartera : null,
+        ccc_faltante: cov ? cov.ccc_faltante : null,
+        cantidad_sku: (m.sku_cur || {})[cod] ?? null,
+      };
+    });
+    const nombre = MESES_TXT[+key.slice(5) - 1];
+    const label = nombre.charAt(0).toUpperCase() + nombre.slice(1) + (+key.slice(0, 4) !== HIST_EXCEL_ANIO ? ' ' + key.slice(0, 4) : '');
+    window.HIST.push({ mes: label, key, vendedores, skuGeneral: m.sku_total_empresa ?? null, arts: m.sku_arts || null, fuente: 'api' });
+  });
+  window.HIST.sort((a, b) => String(a.key || '').localeCompare(String(b.key || '')));
+}
+// SKU de un grupo de vendedores en un mes del histórico: artículos distintos vendidos por todo el grupo
+// (si el mes tiene el detalle de la API); si no, promedio por vendedor como antes.
+function skuGrupoHist(h, g) {
+  if (h && h.arts) {
+    const set = new Set();
+    g.forEach(x => (h.arts[x.codigo] || []).forEach(a => set.add(a)));
+    return { v: set.size, exacto: true };
+  }
+  const c = g.filter(x => x.cantidad_sku != null);
+  return { v: c.length ? Math.round(c.reduce((a, x) => a + x.cantidad_sku, 0) / c.length) : null, exacto: false };
 }
 
 autoLoadFromServer();
