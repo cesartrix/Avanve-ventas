@@ -79,7 +79,6 @@ tr.sup-group-hdr.cob-click.sel td,tr.sup-group-sum.cob-click.sel td{background:r
 .sbtn[data-s="CRISTIAN"].active{background:#ff6b35;}
 .sbtn[data-s="GONZALO"].active{background:#ffcc00;}
 .sbtn[data-s="MAXI"].active{background:#e040fb;}
-.sbtn[data-s="SIN SUPERVISOR"].active{background:#5a6072;color:var(--text);}
 
 .stabs{background:var(--surface);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;gap:4px;overflow-x:auto;position:sticky;top:97px;z-index:190;}
 .stab{padding:6px 13px;border-radius:8px;border:none;background:transparent;color:var(--muted);font-family:'Roboto',sans-serif;font-size:0.75rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:all 0.2s;}
@@ -275,10 +274,6 @@ tr.sup-group-sum td{
       <div class="dias-item"><span class="dias-num" id="d-mes">—</span><span class="dias-lbl">Del mes</span></div>
     </div>
     <span class="finfo" id="finfo">Sin archivo</span>
-    <label class="ubtn" id="reloadbtn" style="display:none">
-      ↺ Actualizar
-      <input type="file" accept=".xlsx" onchange="loadFile(this)">
-    </label>
     <button class="ubtn" id="exportbtn" style="display:none;background:#7b61ff" onclick="exportDashboard()">⬇ Exportar dashboard</button>
   </div>
 </header>
@@ -304,7 +299,6 @@ tr.sup-group-sum td{
     <button class="sbtn" data-s="CRISTIAN" onclick="setSup('CRISTIAN',this)">🟠 Cristian</button>
     <button class="sbtn" data-s="GONZALO" onclick="setSup('GONZALO',this)">🟡 Gonzalo</button>
     <button class="sbtn" data-s="MAXI" onclick="setSup('MAXI',this)">🟣 Maxi</button>
-    <button class="sbtn" data-s="SIN SUPERVISOR" onclick="setSup('SIN SUPERVISOR',this)">⚫ Sin sup.</button>
   </div>
   <div class="stabs">
     <button class="stab active" onclick="showSec('avance',this)">📈 Avance</button>
@@ -498,37 +492,11 @@ function normSup(raw) {
   return null; // unknown supervisor row → skip
 }
 
-// ===== FILE LOAD =====
-function loadFile(inp) {
-  const file = inp.files[0];
-  if (!file) return;
-  inp.value = '';
-  startLoad(file);
-}
-
-function startLoad(file) {
-  document.getElementById('splash').style.display='none';
-  document.getElementById('loading').style.display='flex';
-  document.getElementById('app').style.display='none';
-  document.getElementById('ldtxt').textContent='Leyendo archivo...';
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      document.getElementById('ldtxt').textContent='Procesando datos...';
-      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
-      parseWB(wb, file.name);
-    } catch(err) { showErr('No se pudo leer el archivo: '+err.message); }
-  };
-  reader.onerror = () => showErr('Error al leer el archivo.');
-  reader.readAsArrayBuffer(file);
-}
-
 // ===== Días de trabajo =====
 // Fuente principal: días marcados en el panel admin (GET /api/dias -> { "AAAA-MM": ["AAAA-MM-DD", ...] }).
 // Trabajados = días marcados hasta hoy inclusive (hora Argentina); Restantes = Del mes - Trabajados.
 // Si el mes actual no está configurado, se usan las celdas N2:N4 de la hoja AVANCE del Excel.
 window.DIAS_CFG = null;
-window.DIAS_EXCEL = null;
 function hoyAR() { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }); }
 function calcDiasMes(cfg, hoy) {
   const lista = cfg && cfg[hoy.slice(0, 7)];
@@ -540,53 +508,58 @@ function calcDiasMes(cfg, hoy) {
 function renderDias() {
   const w = document.getElementById('dias-widget');
   if (!w) return;
-  let d = calcDiasMes(window.DIAS_CFG, hoyAR());
-  if (!d) {
-    const e = window.DIAS_EXCEL;
-    if (!e || !(e.rest || e.trab || e.mes)) return;
-    d = { rest: e.rest, trab: e.trab, mes: e.mes, fuente: 'excel' };
-  }
+  const d = diasParaCalculo(hoyAR());
   document.getElementById('d-trab').textContent = d.trab ?? '—';
   document.getElementById('d-rest').textContent = d.rest ?? '—';
   document.getElementById('d-mes').textContent  = d.mes  ?? '—';
-  w.title = d.fuente === 'admin' ? 'Días de trabajo configurados en el panel admin' : 'Días de trabajo tomados del Excel (mes no configurado en el panel admin)';
+  w.title = d.fuente === 'admin' ? 'Días de trabajo configurados en el panel admin' : 'Días de trabajo estimados (lunes a sábado): configurá el mes en el panel admin';
   w.style.display = 'flex';
 }
 async function loadDiasCfg() {
   try {
     const r = await fetch('/api/dias', { cache: 'no-store' });
-    if (r.ok) { window.DIAS_CFG = await r.json(); renderDias(); }
+    if (r.ok) window.DIAS_CFG = await r.json();
   } catch (_) {}
+  renderDias();
 }
 window.DIAS_PROMISE = loadDiasCfg();
 
-// ===== Datos de la API de ChessERP (data/chess_api.json, generado por chess_sync.py) =====
-// Reemplazan a los del Excel: facturación (acumulada y del día), cobertura, CCC por proveedor,
-// cantidad de SKU / desglose por proveedor y día de visita. Del Excel se siguen tomando
-// objetivo, cobro, histórico, horas y artículos disponibles. Proyección, cumplimiento, avance
-// y medias se recalculan con la facturación de la API y los días de trabajo.
+// ===== Fuentes de datos =====
+// · Objetivos y horas: Excel mensual subido desde el panel admin (GET /api/objetivos -> data/objetivos.json).
+//   De ahí salen también la lista de vendedores y su supervisor.
+// · Ventas: API de ChessERP (data/chess_api.json, generado por chess_sync.py): facturación (acumulada y
+//   del día), cobertura, CCC por proveedor, cantidad de SKU / desglose por proveedor, día de visita y entregas.
+//   Proyección, cumplimiento, avance y medias se calculan con la facturación y los días de trabajo.
+// · Histórico mensual y artículos disponibles ("faltan vender"): último Excel completo (data/ventas.xlsx),
+//   se lee en segundo plano.
 window.CHESS_API = null;
 window.CHESS_APPLIED = null;
+window.OBJ_CFG = null;
+window.OBJ_SEL = null;
 async function loadChessApi() {
   try {
     const r = await fetch('/api/chess-data', { cache: 'no-store' });
     if (r.ok) window.CHESS_API = await r.json();
   } catch (_) {}
 }
-const MES_ABR = {ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,SET:9,OCT:10,NOV:11,DIC:12};
-function excelMes(wb) {
-  // Período del Excel: "(001) 01 OCT 2026 - 06 OCT 2026" (Base SKU A2) o "01 OCT 2026 - ..." (X Ruta C3)
-  const cands = [];
-  try { const r = XLSX.utils.sheet_to_json(wb.Sheets['Base SKU'], {header:1, defval:null}); cands.push(r[1] && r[1][0]); } catch (_) {}
-  try { const r = XLSX.utils.sheet_to_json(wb.Sheets['X Ruta'], {header:1, defval:null}); for (let i = 0; i < 6; i++) cands.push(r[i] && r[i][2]); } catch (_) {}
-  for (const c of cands) {
-    const m = String(c || '').toUpperCase().match(/(\d{1,2})\s+([A-Z]{3})\s+(\d{4})/);
-    if (m && MES_ABR[m[2]]) return `${m[3]}-${String(MES_ABR[m[2]]).padStart(2, '0')}`;
-  }
-  return null;
+async function loadObjetivos() {
+  try {
+    const r = await fetch('/api/objetivos', { cache: 'no-store' });
+    if (r.ok) window.OBJ_CFG = await r.json();
+  } catch (_) {}
+}
+const MESES_TXT = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const mesTxt = mes => MESES_TXT[+mes.slice(5, 7) - 1] + ' ' + mes.slice(0, 4);
+// Objetivos del mes pedido; si ese mes no se cargó todavía, los del último mes anterior cargado.
+function elegirObjetivos(cfg, mes) {
+  const meses = Object.keys(cfg || {}).filter(k => /^\d{4}-\d{2}$/.test(k) && cfg[k] && Array.isArray(cfg[k].vendedores) && cfg[k].vendedores.length).sort();
+  if (!meses.length) return null;
+  if (cfg[mes] && meses.includes(mes)) return { mes, data: cfg[mes], exacto: true };
+  const m = meses.filter(k => k < mes).pop() || meses[meses.length - 1];
+  return { mes: m, data: cfg[m], exacto: false, pedido: mes };
 }
 function diasParaCalculo(hasta) {
-  // Días de trabajo para proyección/medias: panel admin; si no, total del Excel y lunes a sábado hasta la fecha.
+  // Días de trabajo para proyección/medias: panel admin; si el mes no está configurado, lunes a sábado.
   const cfg = calcDiasMes(window.DIAS_CFG, hasta);
   if (cfg) return cfg;
   const mes = hasta.slice(0, 7);
@@ -598,26 +571,58 @@ function diasParaCalculo(hasta) {
     if (new Date(iso + 'T12:00:00').getDay() === 0) continue;
     lunSab++; if (iso <= hasta) lunSabHasta++;
   }
-  const e = window.DIAS_EXCEL;
-  const total = (e && +e.mes) || lunSab;
-  const trab = Math.min(lunSabHasta, total);
-  return { mes: total, trab, rest: total - trab, fuente: 'estimado' };
+  return { mes: lunSab, trab: lunSabHasta, rest: lunSab - lunSabHasta, fuente: 'estimado' };
 }
-function applyChessApi(wb) {
+
+// Arma A (avance), COB (cobertura), subtotales, horas, SKU y día de visita a partir de los objetivos
+// del mes (panel admin) y los datos de la API de Chess.
+function buildData() {
+  const api = window.CHESS_API;
+  const mesApi = api && api.periodo && api.periodo.desde ? api.periodo.desde.slice(0, 7) : hoyAR().slice(0, 7);
+  const sel = elegirObjetivos(window.OBJ_CFG, mesApi);
+  if (!sel) throw new Error('No hay objetivos cargados. Subí el Excel de objetivos y horas desde el panel admin.');
+  window.OBJ_SEL = sel;
+
+  A = [];
+  sel.data.vendedores.forEach(v => {
+    const cod = String(v.codigo);
+    if (A.some(x => x.codigo === cod)) return;
+    A.push({
+      nombre: String(v.nombre || '').trim(), codigo: cod,
+      supervisor: NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : (normSup(v.supervisor) || 'SIN SUPERVISOR'),
+      objetivo: Math.round(+v.objetivo || 0),
+      facturacion: 0, facturacion_dia: 0, avance_pct: 0, proyeccion: 0, cumplimiento: 0,
+      media_real: 0, media_nec: 0, cobro: 0, cantidad_sku: null, dia_visita: null,
+    });
+  });
+  const conSup = A.filter(x => x.supervisor !== 'SIN SUPERVISOR');
+  window.SUP_SUBTOTALS = {};
+  SUPS.forEach(s => {
+    const g = A.filter(x => x.supervisor === s);
+    if (g.length && s !== 'SIN SUPERVISOR') window.SUP_SUBTOTALS[s] = { objetivo: g.reduce((a, x) => a + x.objetivo, 0), facturacion: 0, proyeccion: 0 };
+  });
+  window.GRAND_TOTAL = { objetivo: conSup.reduce((a, x) => a + x.objetivo, 0), facturacion: 0, proyeccion: 0 };
+
+  COB = [];
+  window.COB_PROV = {}; window.SKU_CUR = {}; window.SKU_TOTAL_EMPRESA = null;
+  window.SKU_PROV = {}; window.SKU_PROV_DETAIL = {}; window.DIA_VISITA = {}; window.ENTREGAS = null;
+  applyChessApi();
+
+  // Horas en ruta (promedio mensual) del mismo Excel de objetivos
+  window.HORAS = (sel.data.horas || [])
+    .filter(h => +h.horas > 0)
+    .map(h => ({ cod: String(h.codigo), nombre: String(h.nombre || '').trim(), horas: +(+h.horas).toFixed(3), supervisor: getCurSup(h.codigo) || 'SIN SUPERVISOR' }));
+  buildHorasChart();
+}
+
+function applyChessApi() {
   window.CHESS_APPLIED = null;
   const api = window.CHESS_API;
-  window.ENTREGAS = (api && api.entregas) || null;
   if (!api || !api.periodo || !api.facturacion) return;
-  const mesApi = api.periodo.desde.slice(0, 7);
-  const mesXls = excelMes(wb);
-  if (mesXls && mesXls !== mesApi) {
-    console.warn(`Datos API (${mesApi}) y Excel (${mesXls}) son de meses distintos: se usan solo los del Excel.`);
-    window.CHESS_APPLIED = { skip: `API ${mesApi} ≠ Excel ${mesXls}` };
-    return;
-  }
+  window.ENTREGAS = api.entregas || null;
   const dias = diasParaCalculo(api.periodo.hasta);
   const r0 = v => Math.round(v || 0);
-  // ---- Avance: facturación + recálculo de derivados ----
+  // ---- Avance: facturación + cálculo de derivados ----
   A.forEach(x => {
     const f = api.facturacion[x.codigo] || { facturacion: 0, facturacion_dia: 0 };
     x.facturacion = r0(f.facturacion);
@@ -628,25 +633,27 @@ function applyChessApi(wb) {
     x.proyeccion = mr * dias.mes;
     x.cumplimiento = x.objetivo ? +(x.proyeccion / x.objetivo * 100).toFixed(1) : 0;
     x.media_nec = dias.rest > 0 ? r0((x.objetivo - x.facturacion) / dias.rest) : 0;
-    if (api.sku_cur) x.cantidad_sku = api.sku_cur[x.codigo] ?? 0;
-    if (api.dia_visita) x.dia_visita = api.dia_visita[x.codigo] || null;
+    x.cantidad_sku = api.sku_cur ? (api.sku_cur[x.codigo] ?? 0) : null;
+    x.dia_visita = api.dia_visita ? (api.dia_visita[x.codigo] || null) : null;
   });
-  // Subtotales por supervisor y total general = sumas de vendedores (igual que en el Excel)
+  // Subtotales por supervisor y total general = sumas de vendedores
   Object.keys(window.SUP_SUBTOTALS || {}).forEach(sup => {
     const g = A.filter(x => x.supervisor === sup);
     window.SUP_SUBTOTALS[sup].facturacion = r0(g.reduce((s, x) => s + x.facturacion, 0));
     window.SUP_SUBTOTALS[sup].proyeccion = g.reduce((s, x) => s + x.proyeccion, 0);
   });
   if (window.GRAND_TOTAL) {
-    window.GRAND_TOTAL.facturacion = r0(A.reduce((s, x) => s + x.facturacion, 0));
-    window.GRAND_TOTAL.proyeccion = A.reduce((s, x) => s + x.proyeccion, 0);
+    const g = A.filter(x => x.supervisor !== 'SIN SUPERVISOR');
+    window.GRAND_TOTAL.facturacion = r0(g.reduce((s, x) => s + x.facturacion, 0));
+    window.GRAND_TOTAL.proyeccion = g.reduce((s, x) => s + x.proyeccion, 0);
   }
-  // ---- Cobertura ----
+  // ---- Cobertura (vendedores con objetivo; nombre y supervisor de los objetivos) ----
   if (Array.isArray(api.cobertura)) {
-    const byCod = {}; api.cobertura.forEach(c => byCod[c.codigo] = c);
-    COB.forEach(c => {
-      const a = byCod[c.codigo]; if (!a) return;
-      c.cobertura = a.cobertura; c.ccc = a.ccc; c.ccc_faltante = a.ccc_faltante; c.cartera = a.cartera;
+    const byCod = {}; api.cobertura.forEach(c => byCod[String(c.codigo)] = c);
+    COB = A.filter(x => byCod[x.codigo]).map(x => {
+      const a = byCod[x.codigo];
+      return { codigo: x.codigo, nombre: x.nombre, supervisor: x.supervisor,
+        cobertura: +a.cobertura || 0, ccc: Math.round(+a.ccc || 0), ccc_faltante: +(+a.ccc_faltante || 0).toFixed(1), cartera: Math.round(+a.cartera || 0) };
     });
   }
   if (api.cob_prov) window.COB_PROV = api.cob_prov;
@@ -658,311 +665,54 @@ function applyChessApi(wb) {
   if (api.dia_visita) window.DIA_VISITA = api.dia_visita;
   window.CHESS_APPLIED = { generado: api.generado, dias };
 }
-function setFinfo(base) {
+function setFinfo() {
   const el = document.getElementById('finfo');
-  const ap = window.CHESS_APPLIED;
+  const ap = window.CHESS_APPLIED, sel = window.OBJ_SEL;
+  const partes = [];
   if (ap && ap.generado) {
     const g = new Date(ap.generado);
     el.textContent = `Ventas API Chess ${g.toLocaleDateString('es-AR', {day:'2-digit', month:'2-digit'})} ${g.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit', hour12:false})}`;
-    el.title = `${base} — objetivos, cobro e histórico del Excel; facturación, cobertura, SKU y día de visita de la API de Chess` +
-      (ap.dias && ap.dias.fuente === 'estimado' ? ' (días de trabajo estimados: configurá el mes en el panel admin)' : '');
+    partes.push('Facturación, cobertura, SKU, día de visita y entregas: API de Chess');
+    if (ap.dias && ap.dias.fuente === 'estimado') partes.push('Días de trabajo estimados (lunes a sábado): configurá el mes en el panel admin');
   } else {
-    el.textContent = base;
-    el.title = ap && ap.skip ? `Datos de la API no aplicados: ${ap.skip}` : '';
+    el.textContent = 'Sin datos de la API de Chess';
+    partes.push('No hay datos de la API de Chess: corré correr_ahora.bat');
   }
   el.className = 'finfo ok';
+  el.style.color = '';
+  if (sel) {
+    const sub = sel.data.subido ? new Date(sel.data.subido).toLocaleDateString('es-AR', {day:'2-digit', month:'2-digit'}) : '';
+    partes.unshift(`Objetivos y horas de ${mesTxt(sel.mes)}${sub ? ' (subidos el ' + sub + ')' : ''}: panel admin`);
+    if (!sel.exacto) {
+      el.textContent = `⚠ Faltan objetivos de ${mesTxt(sel.pedido)} · ` + el.textContent;
+      el.style.color = 'var(--warn)';
+      partes.unshift(`Todavía no se subieron los objetivos de ${mesTxt(sel.pedido)}: se usan los de ${mesTxt(sel.mes)}`);
+    }
+  }
+  el.title = partes.join('\n');
 }
 
-function parseWB(wb, fname) {
+function showApp() {
+  setFinfo();
+  document.getElementById('exportbtn').style.display = 'inline-flex';
+  cur = 'TODOS';
+  document.querySelectorAll('.sbtn').forEach(b => b.classList.remove('active'));
+  document.querySelector('[data-s="TODOS"]').classList.add('active');
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('splash').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+  document.getElementById('pg-avance').classList.add('active');
+  document.querySelectorAll('.stab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.stab')[0].classList.add('active');
+  if (document.getElementById('sav')) document.getElementById('sav').value = '';
+  refresh();
+}
+
+// Del último Excel completo (data/ventas.xlsx) solo se toman las hojas "Historico <Mes>" y los
+// artículos disponibles para la venta de "Base SKU"/"Base Art" (PDF "faltan vender").
+function parseLegacyWB(wb) {
   try {
-    if (!wb.SheetNames.includes('AVANCE')) throw new Error('No se encontró la hoja AVANCE.');
-
-    // ---- Detect format ----
-    const avWS = wb.Sheets['AVANCE'];
-    const avRaw = XLSX.utils.sheet_to_json(avWS, {header:1, defval:null});
-    // Read M2:N4 - dias de trabajo (col 12=M, col 13=N, rows 1-3 = fila 2-4)
-    // (si el mes está configurado en el panel admin, renderDias() usa esa configuración en lugar del Excel)
-    try {
-      window.DIAS_EXCEL = {
-        rest: avRaw[1] && avRaw[1][13], // N2
-        trab: avRaw[2] && avRaw[2][13], // N3
-        mes:  avRaw[3] && avRaw[3][13], // N4
-      };
-      renderDias();
-    } catch(_) {}
-
-    // Find header row
-    let hIdx = avRaw.findIndex(r => r && r.some(c => String(c||'').toUpperCase().includes('OBJETIVO')));
-    if (hIdx === -1) throw new Error('No se encontró la fila de encabezados en AVANCE.');
-
-    const headers = avRaw[hIdx].map(h => String(h||'').trim().toUpperCase());
-    const ci = name => headers.findIndex(h => h.includes(name));
-
-    // Detect NEW format: has separate SUPERVISOR and VENDEDOR columns
-    const hasSupCol = ci('SUPERVISOR') > -1 && ci('VENDEDOR') > -1 && ci('SUPERVISOR') !== ci('VENDEDOR');
-    const newFormat = hasSupCol;
-
-    const iSup   = newFormat ? ci('SUPERVISOR') : -1;
-    const iVen   = newFormat ? ci('VENDEDOR') : ci('VENDEDOR/ SUPERVISOR') > -1 ? ci('VENDEDOR/ SUPERVISOR') : 0;
-    const iObj   = ci('OBJETIVO');
-    const iProyec = ci('PROYECCION');
-    const iFact  = ci('FACTURACION ACUMULADA');
-    const iFactDia = ci('FACTURACION DEL DIA');
-    const iAv    = ci('AVANCE VS OBJETIVO');
-    const iCumpl = ci('CUMPLIMIENTO PROYECTADO');
-    const iMR    = ci('MEDIA REAL');
-    const iMN    = ci('MEDIA NECESARIA');
-    const iCobro = ci('COBRO');
-
-    A = [];
-    let lastSup = 'SIN SUPERVISOR';
-
-    for (let i = hIdx + 1; i < avRaw.length; i++) {
-      const row = avRaw[i];
-      if (!row) continue;
-
-      if (newFormat) {
-        // New format: SUPERVISOR col tells us when sup changes
-        const supRaw = row[iSup];
-        const supNorm = normSup(supRaw);
-        if (supNorm) lastSup = supNorm;
-
-        const venRaw = row[iVen];
-        if (isBlank(venRaw)) continue;
-        const venStr = String(venRaw).trim();
-
-        // Skip header-repeat row
-        if (venStr.toUpperCase().includes('VENDEDOR')) continue;
-
-        // Must match "N - NAME"
-        const m = venStr.match(/^(\d+)\s*-\s*(.+)/);
-        if (!m) continue;
-
-        const cod = m[1], shortName = m[2].trim();
-        const obj = n(row[iObj]);
-        if (!obj) continue;
-
-        const sup = NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : lastSup;
-
-        A.push({
-          nombre: shortName, codigo: cod, supervisor: sup,
-          objetivo: Math.round(obj),
-          facturacion: Math.round(n(row[iFact])),
-          facturacion_dia: Math.round(n(row[iFactDia])),
-          avance_pct: parseFloat((n(row[iAv])*100).toFixed(1)),
-          proyeccion: iProyec>=0 ? n(row[iProyec]) : 0,
-          cumplimiento: parseFloat((iProyec>=0 && iObj>=0 && n(row[iObj]) ? (n(row[iProyec])/n(row[iObj])*100) : n(row[iCumpl])*100).toFixed(1)),
-          media_real: Math.round(n(row[iMR])),
-          media_nec: Math.round(n(row[iMN])),
-          cobro: Math.round(n(row[iCobro])),
-        });
-
-      } else {
-        // Old format: single VENDEDOR/SUPERVISOR column
-        const raw = row[iVen];
-        if (isBlank(raw)) continue;
-        const str = String(raw).trim();
-        if (str.toUpperCase().includes('VENDEDOR')) continue;
-        // Supervisor row? (no leading number)
-        const m = str.match(/^(\d+)\s*-\s*(.+)/);
-        if (!m) {
-          const supNorm = normSup(str);
-          if (supNorm) lastSup = supNorm;
-          continue;
-        }
-        const cod = m[1], shortName = m[2].trim();
-        const obj = n(row[iObj]);
-        if (!obj) continue;
-        const sup = NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : lastSup;
-        A.push({
-          nombre: shortName, codigo: cod, supervisor: sup,
-          objetivo: Math.round(obj),
-          facturacion: Math.round(n(row[iFact])),
-          facturacion_dia: Math.round(n(row[iFactDia])),
-          avance_pct: parseFloat((n(row[iAv])*100).toFixed(1)),
-          proyeccion: iProyec>=0 ? n(row[iProyec]) : 0,
-          cumplimiento: parseFloat((iProyec>=0 && iObj>=0 && n(row[iObj]) ? (n(row[iProyec])/n(row[iObj])*100) : n(row[iCumpl])*100).toFixed(1)),
-          media_real: Math.round(n(row[iMR])),
-          media_nec: Math.round(n(row[iMN])),
-          cobro: Math.round(n(row[iCobro])),
-        });
-      }
-    }
-
-    if (A.length === 0) throw new Error('No se encontraron vendedores. Verificá que el archivo sea el reporte correcto de Chess.');
-
-    // ---- CANTIDAD SKU (mes actual) ----
-    window.SKU_CUR = {};
-    window.SKU_TOTAL_EMPRESA = null;
-    if (wb.SheetNames.includes('Cantidad Sku')) {
-      const skuWS = wb.Sheets['Cantidad Sku'];
-      const skuRaw = XLSX.utils.sheet_to_json(skuWS, {header:1, defval:null});
-      window.SKU_CUR = extractSkuMap(skuRaw, 0);
-      // Celda I3 (fila 3, columna I) = cantidad total de SKUs vendidos por la empresa (general)
-      const i3 = skuRaw[2] ? skuRaw[2][8] : null;
-      window.SKU_TOTAL_EMPRESA = (typeof i3 === 'number' && isFinite(i3)) ? i3 : null;
-    }
-    A.forEach(x => {
-      const s = window.SKU_CUR[x.codigo];
-      x.cantidad_sku = s ? s.cantidad : null;
-    });
-
-    // ---- COBERTURA ----
-    COB = [];
-    if (wb.SheetNames.includes('COBERTURA')) {
-      const cobWS = wb.Sheets['COBERTURA'];
-      const cobRaw = XLSX.utils.sheet_to_json(cobWS, {header:1, defval:null});
-      let chIdx = cobRaw.findIndex(r => r && r.some(c => String(c||'').toUpperCase().includes('COBERTURA TOTAL')));
-      if (chIdx === -1) chIdx = 0;
-      const ch = cobRaw[chIdx].map(h => String(h||'').trim().toUpperCase());
-      const ciC = name => ch.findIndex(h => h.includes(name));
-
-      // Detect if COBERTURA also has separate SUPERVISOR column
-      const hasCobSup = ciC('SUPERVISOR') > -1 && ciC('VENDEDOR') > -1;
-      const iCSup  = hasCobSup ? ciC('SUPERVISOR') : -1;
-      const iCVen  = hasCobSup ? ciC('VENDEDOR') : ciC('VENDEDOR/ SUPERVISOR') > -1 ? ciC('VENDEDOR/ SUPERVISOR') : 1;
-      const iCOB   = ciC('COBERTURA TOTAL');
-      const iCCC   = ch.findIndex(h => h === 'CCC');
-      const iCCCF  = ch.findIndex(h => h.includes('CCC FALTANTE'));
-      const iCAR   = ciC('CARTERA TOTAL');
-
-      let cobLastSup = 'SIN SUPERVISOR';
-      for (let i = chIdx + 1; i < cobRaw.length; i++) {
-        const row = cobRaw[i];
-        if (!row) continue;
-
-        // Track supervisor
-        if (iCSup > -1) {
-          const sr = row[iCSup];
-          if (!isBlank(sr)) {
-            const sn = normSup(sr);
-            if (sn) cobLastSup = sn;
-          }
-        }
-
-        const venRaw = row[iCVen];
-        if (isBlank(venRaw)) continue;
-        const venStr = String(venRaw).trim();
-        const m = venStr.match(/^(\d+)\s*-\s*(.+)/);
-        if (!m) {
-          // try to read supervisor name from vendor cell too (handles varied formats)
-          const sn = normSup(venStr);
-          if (sn) cobLastSup = sn;
-          continue;
-        }
-        const cod = m[1], shortName = m[2].trim();
-        const cobV = n(row[iCOB]);
-        const sup = NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : cobLastSup;
-        // Remove duplicate vendor (keep last occurrence which is the correct supervisor)
-        const dupIdx = COB.findIndex(x => x.codigo === cod);
-        if (dupIdx !== -1) COB.splice(dupIdx, 1);
-        COB.push({
-          codigo: cod, nombre: shortName, supervisor: sup,
-          cobertura: parseFloat((cobV * 100).toFixed(1)),
-          ccc: Math.round(n(row[iCCC])),
-          ccc_faltante: +(n(row[iCCCF])).toFixed(1),
-          cartera: Math.round(n(row[iCAR])),
-        });
-      }
-    }
-
-    // ---- BASE COBERTURA: CCC POR PROVEEDOR ----
-    // Hoja "Base Cobertura", bloque "Coberturaxproveedor": Col K (idx 10) = nro de vendedor
-    // (solo en la 1ª fila de cada bloque, se arrastra hacia abajo), Col L (idx 11) = proveedor
-    // (formato "114 - ARCOR", se saca el prefijo numérico), Col M (idx 12) = CCC,
-    // Col N (idx 13) = cartera del vendedor (repetida en cada fila).
-    window.COB_PROV = {};
-    if (wb.SheetNames.includes('Base Cobertura')) {
-      const bcRaw = XLSX.utils.sheet_to_json(wb.Sheets['Base Cobertura'], {header:1, defval:null});
-      const acc = {};
-      let curVen = null;
-      for (let i = 2; i < bcRaw.length; i++) {
-        const row = bcRaw[i];
-        if (!row) continue;
-        const kRaw = row[10];
-        if (!isBlank(kRaw)) {
-          const kStr = String(kRaw).trim();
-          if (/^total/i.test(kStr)) break;
-          const kn = parseInt(kStr, 10);
-          curVen = isNaN(kn) ? null : String(kn);
-        }
-        if (!curVen || isBlank(row[11])) continue;
-        const prov = String(row[11]).trim().replace(/^\d+\s*-\s*/, '');
-        const o = acc[curVen] = acc[curVen] || { cartera: 0, provs: {} };
-        o.cartera = Math.round(n(row[13])) || o.cartera;
-        o.provs[prov] = (o.provs[prov] || 0) + n(row[12]);
-      }
-      Object.keys(acc).forEach(cod => {
-        window.COB_PROV[cod] = {
-          cartera: acc[cod].cartera,
-          provs: Object.entries(acc[cod].provs)
-            .map(([proveedor, ccc]) => ({ proveedor, ccc: Math.round(ccc) }))
-            .sort((a, b) => b.ccc - a.ccc || a.proveedor.localeCompare(b.proveedor)),
-        };
-      });
-    }
-
-    // ---- BASE SKU POR PROVEEDOR ----
-    // Hoja "Base SKU": una fila por SKU vendido en el período. Col E = código de
-    // vendedor, Col H = código de artículo, Col I = descripción del artículo,
-    // Col AN = proveedor del artículo, Col AM = cantidad (siempre 1 por fila;
-    // sumada por vendedor reproduce exactamente los totales de "Cantidad Sku").
-    window.SKU_PROV = {};
-    window.SKU_PROV_DETAIL = {};
-    if (wb.SheetNames.includes('Base SKU')) {
-      const skuProvWS = wb.Sheets['Base SKU'];
-      const skuProvRaw = XLSX.utils.sheet_to_json(skuProvWS, {header:1, defval:null});
-      const acc = {};       // { codigoVendedor: { proveedor: cantidad } }
-      const accArt = {};    // { codigoVendedor: { proveedor: { codArt: {codigo,descripcion,cantidad} } } }
-      for (let i = 1; i < skuProvRaw.length; i++) {
-        const row = skuProvRaw[i];
-        if (!row) continue;
-        const codRaw = row[4];     // Col E
-        const codArtRaw = row[7];  // Col H
-        const descArtRaw = row[8]; // Col I
-        const cant = n(row[38]);   // Col AM
-        const provRaw = row[39];   // Col AN
-        if (isBlank(codRaw) || isBlank(provRaw)) continue;
-        const codStr = String(parseInt(codRaw, 10));
-        if (!codStr || codStr === 'NaN') continue;
-        const provName = String(provRaw).trim();
-        acc[codStr] = acc[codStr] || {};
-        acc[codStr][provName] = (acc[codStr][provName] || 0) + cant;
-
-        const codArtStr = isBlank(codArtRaw) ? '' : String(codArtRaw).trim();
-        const descArtStr = isBlank(descArtRaw) ? '(sin descripción)' : String(descArtRaw).trim();
-        const artKey = codArtStr || descArtStr;
-        if (artKey) {
-          accArt[codStr] = accArt[codStr] || {};
-          accArt[codStr][provName] = accArt[codStr][provName] || {};
-          const bucket = accArt[codStr][provName];
-          bucket[artKey] = bucket[artKey] || { codigo: codArtStr, descripcion: descArtStr, cantidad: 0 };
-          bucket[artKey].cantidad += cant;
-        }
-      }
-      const out = {};
-      Object.keys(acc).forEach(cod => {
-        out[cod] = Object.entries(acc[cod])
-          .map(([proveedor, cantidad]) => ({ proveedor, cantidad: Math.round(cantidad) }))
-          .sort((a, b) => b.cantidad - a.cantidad);
-      });
-      window.SKU_PROV = out;
-
-      const outDetail = {};
-      Object.keys(accArt).forEach(cod => {
-        const provList = Object.entries(accArt[cod]).map(([proveedor, artMap]) => {
-          const articulos = Object.values(artMap)
-            .map(a => ({ codigo: a.codigo, descripcion: a.descripcion, cantidad: Math.round(a.cantidad) }))
-            .sort((a, b) => b.cantidad - a.cantidad);
-          const cantidad = articulos.reduce((s, a) => s + a.cantidad, 0);
-          return { proveedor, cantidad, articulos };
-        });
-        provList.sort((a, b) => b.cantidad - a.cantidad);
-        outDetail[cod] = provList;
-      });
-      window.SKU_PROV_DETAIL = outDetail;
-    }
-
     // ---- ARTÍCULOS DISPONIBLES PARA LA VENTA (para "faltan vender") ----
     // Hoja "Base SKU": Col AO (idx 40) = código de artículo disponible, Col AP (idx 41) = descripción,
     // Col BB (idx 53) = "SI"/"NO" (solo se incluyen los marcados "SI").
@@ -1010,51 +760,6 @@ function parseWB(wb, fname) {
       }
     }
 
-    // ---- X RUTA: incidencia del día de visita en la facturación de cada vendedor ----
-    // Hoja "X Ruta": columna A/C = ruta de venta + facturación acumulada de esa ruta.
-    // Columnas N/O/P/Q/R = tabla maestra de rutas (Ruta, Descripción, Día de Visita, Cod Vendedor, Vendedor).
-    // El día de visita solo está clasificado para rutas con esquema rotativo de 2 días
-    // (LUJU=Lunes/Jueves, MAVI=Martes/Viernes, MISA=Miércoles/Sábado); el resto queda sin clasificar.
-    window.DIA_VISITA = {};
-    if (wb.SheetNames.includes('X Ruta')) {
-      const xrWS = wb.Sheets['X Ruta'];
-      const xrRaw = XLSX.utils.sheet_to_json(xrWS, {header:1, defval:null});
-      const DIAS = ['LUJU','MAVI','MISA'];
-
-      // Tabla maestra: N(13)=Ruta, P(15)=Día Visita, Q(16)=Cod Vendedor
-      const routeInfo = {};
-      for (let i = 0; i < xrRaw.length; i++) {
-        const row = xrRaw[i];
-        if (!row) continue;
-        const rutaCod = row[13];
-        if (isBlank(rutaCod) || isNaN(parseFloat(rutaCod))) continue;
-        const vend = row[16];
-        if (isBlank(vend) || isNaN(parseFloat(vend))) continue;
-        const dia = row[15] ? String(row[15]).trim().toUpperCase() : null;
-        routeInfo[String(parseInt(rutaCod,10))] = { dia, vendedor: String(parseInt(vend,10)) };
-      }
-
-      // Facturación por ruta: A(0)=Código Ruta, C(2)=Importe Neto Facturado
-      const acc = {}; // { codVendedor: {LUJU,MAVI,MISA,total} }
-      for (let i = 0; i < xrRaw.length; i++) {
-        const row = xrRaw[i];
-        if (!row) continue;
-        const rutaCod = row[0];
-        if (isBlank(rutaCod) || isNaN(parseFloat(rutaCod))) continue;
-        const importe = n(row[2]);
-        if (!importe) continue;
-        const info = routeInfo[String(parseInt(rutaCod,10))];
-        if (!info || !DIAS.includes(info.dia)) continue;
-        acc[info.vendedor] = acc[info.vendedor] || {LUJU:0,MAVI:0,MISA:0,total:0};
-        acc[info.vendedor][info.dia] += importe;
-        acc[info.vendedor].total += importe;
-      }
-      window.DIA_VISITA = acc;
-    }
-    A.forEach(x => { x.dia_visita = window.DIA_VISITA[x.codigo] || null; });
-
-    // ---- Update UI ----
-    const today = new Date();
     // ===== PARSE HISTORICO =====
     window.HIST = [];
     const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -1142,105 +847,14 @@ function parseWB(wb, fname) {
       return ai - bi;
     });
     buildHistorico();
-
-    // ===== READ SUPERVISOR SUBTOTALS FROM EXCEL =====
-    // Subtotal rows: both supervisor and vendor cols are empty, but objetivo col has value
-    const SUP_SUBTOTALS = {};
-    let lastSupForSub = '';
-    for (let i = hIdx + 1; i < avRaw.length; i++) {
-      const row = avRaw[i];
-      if (!row) continue;
-      const supCell = String(row[iSup] || '').trim();
-      const venCell = String(row[iVen] || '').trim();
-      if (supCell) lastSupForSub = normSup(supCell) || supCell;
-      // Subtotal row: vendor col is blank but objetivo col has a value
-      if (!venCell && !supCell && row[iObj] && n(row[iObj]) > 0) {
-        const sn = lastSupForSub;
-        if (sn && sn !== 'SIN SUPERVISOR') {
-          SUP_SUBTOTALS[sn] = {
-            objetivo: Math.round(n(row[iObj])),
-            facturacion: Math.round(n(row[iFact])),
-            proyeccion: n(row[iProyec] >= 0 ? row[iProyec] : row[iObj]),
-          };
-        }
-      }
-    }
-    // Also read the grand total row (last row with a non-vendor value in col[0])
-    window.GRAND_TOTAL = null;
-    for (let i = avRaw.length - 1; i > hIdx; i--) {
-      const row = avRaw[i];
-      if (!row) continue;
-      const c0 = String(row[0]||'').trim();
-      const c1 = String(row[1]||'').trim();
-      // Grand total row: col[0] has text (like LOPEZ ENZO), col[1] is empty, col[2] has large number
-      if (c0 && !c1 && row[iObj] && n(row[iObj]) > 1e8) {
-        window.GRAND_TOTAL = {
-          objetivo:    Math.round(n(row[iObj])),
-          facturacion: Math.round(n(row[iFact])),
-          proyeccion:  iProyec >= 0 ? n(row[iProyec]) : n(row[iFact]),
-        };
-        break;
-      }
-    }
-    window.SUP_SUBTOTALS = SUP_SUBTOTALS;
-
-    // ===== DATOS DE LA API DE CHESS (si hay y son del mismo mes que el Excel) =====
-    applyChessApi(wb);
-
-    // ===== PARSE PROMEDIO HORAS =====
-    window.HORAS = [];
-    const horasWS = wb.Sheets['Promedio Horas'];
-    if (horasWS) {
-      // vendor -> supervisor map from parsed avance data
-      const supMap = {};
-      A.forEach(x => { supMap[x.codigo] = x.supervisor; });
-
-      const horasRaw = XLSX.utils.sheet_to_json(horasWS, {header:1, defval:null});
-      for (let i=1; i<horasRaw.length; i++) {
-        const r = horasRaw[i];
-        if (!r || !r[1] || !r[3]) continue;
-        let hDecimal = 0;
-        const val = r[3];
-        if (typeof val === 'number') {
-          hDecimal = val * 24; // Excel fraction
-        } else if (val instanceof Date) {
-          hDecimal = val.getHours() + val.getMinutes()/60 + val.getSeconds()/3600;
-        }
-        if (hDecimal <= 0) continue;
-        const cod = String(r[0]||'').replace(/^V/i,'').trim();
-        window.HORAS.push({
-          cod,
-          nombre: String(r[1]).trim(),
-          horas: +hDecimal.toFixed(3),
-          supervisor: supMap[cod] || 'SIN SUPERVISOR'
-        });
-      }
-      buildHorasChart();
-    }
-
-    setFinfo(`✓ ${fname} · ${today.toLocaleDateString('es-AR')}`);
-    document.getElementById('reloadbtn').style.display = 'inline-flex';
-    document.getElementById('exportbtn').style.display = 'inline-flex';
-    cur = 'TODOS';
-    document.querySelectorAll('.sbtn').forEach(b => b.classList.remove('active'));
-    document.querySelector('[data-s="TODOS"]').classList.add('active');
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
-    document.getElementById('pg-avance').classList.add('active');
-    document.querySelectorAll('.stab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.stab')[0].classList.add('active');
-    if (document.getElementById('sav')) document.getElementById('sav').value = '';
-    refresh();
-
-  } catch(err) { showErr(err.message); }
+  } catch (err) { console.warn('No se pudo leer el histórico del Excel:', err); }
 }
 
 function showErr(msg) {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('splash').style.display = 'flex';
   const e = document.getElementById('errmsg');
-  e.innerHTML = '⚠️ ' + msg + '<br><small>Verificá que sea el reporte correcto exportado desde Chess ERP.</small>';
+  e.innerHTML = '⚠️ ' + msg;
   e.style.display = 'block';
 }
 
@@ -1894,7 +1508,6 @@ ${document.querySelector('style').textContent}
   <button class="sbtn" data-s="CRISTIAN" onclick="setSup('CRISTIAN',this)">🟠 Cristian</button>
   <button class="sbtn" data-s="GONZALO" onclick="setSup('GONZALO',this)">🟡 Gonzalo</button>
     <button class="sbtn" data-s="MAXI" onclick="setSup('MAXI',this)">🟣 Maxi</button>
-  <button class="sbtn" data-s="SIN SUPERVISOR" onclick="setSup('SIN SUPERVISOR',this)">⚫ Sin sup.</button>
 </div>
 <div class="stabs">
   <button class="stab active" onclick="showSec('avance',this)">📈 Avance</button>
@@ -2427,9 +2040,12 @@ async function loadTrazDate(fecha) {
 // ===== HORAS CHART =====
 const horasChartInstances = {};
 function buildHorasChart() {
-  if (!window.HORAS || !window.HORAS.length) return;
   const grid = document.getElementById('horas-grid');
   if (!grid) return;
+  if (!window.HORAS || !window.HORAS.length) {
+    grid.innerHTML = '<div style="color:var(--muted);padding:40px;text-align:center">No hay horas cargadas para este mes. Subilas junto con los objetivos desde el panel admin.</div>';
+    return;
+  }
 
   const OBJETIVO = 6;
   const SUP_COLORS = {'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','GONZALO':'#ffcc00','MAXI':'#e040fb'};
@@ -2876,25 +2492,31 @@ function toggleAvcDataset(idx, visible) {
 
 // ===== INIT =====
 async function autoLoadFromServer() {
-  const apiPromise = loadChessApi();
+  try {
+    await Promise.all([window.DIAS_PROMISE, loadChessApi(), loadObjetivos()]);
+    document.getElementById('splash').style.display = 'none';
+    document.getElementById('loading').style.display = 'flex';
+    document.getElementById('ldtxt').textContent = 'Procesando datos...';
+    buildData();
+    showApp();
+  } catch (err) { showErr(err.message); return; }
+  loadLegacyExcel();
+}
+
+// Histórico mensual y artículos disponibles: del último Excel completo, en segundo plano.
+async function loadLegacyExcel() {
   try {
     const r = await fetch('/api/data-url');
-    if (r.status === 404) { showErr('No hay datos cargados. Pedile al administrador que suba el Excel.'); return; }
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const info = await r.json();
-    const msg = document.getElementById('splash-msg');
-    if (msg) msg.textContent = 'Descargando datos...';
-    const fileResp = await fetch(info.url + '?t=' + Date.now());
-    if (!fileResp.ok) throw new Error('No se pudo descargar el archivo');
-    const arrayBuffer = await fileResp.arrayBuffer();
-    document.getElementById('splash').style.display='none';
-    document.getElementById('loading').style.display='flex';
-    document.getElementById('ldtxt').textContent='Procesando datos...';
-    const wb = XLSX.read(new Uint8Array(arrayBuffer), {type:'array'});
-    await Promise.all([window.DIAS_PROMISE, apiPromise]);
-    parseWB(wb, 'ventas-data.xlsx');
-    setFinfo('Actualizado ' + new Date(info.uploadedAt||Date.now()).toLocaleDateString('es-AR'));
-  } catch(err) { showErr('Error al cargar datos: ' + err.message); }
+    const fr = await fetch(info.url + '?t=' + Date.now());
+    if (!fr.ok) throw new Error('HTTP ' + fr.status);
+    parseLegacyWB(XLSX.read(new Uint8Array(await fr.arrayBuffer()), {type:'array'}));
+  } catch (err) { console.warn('Histórico no disponible:', err); }
+  if (!window.HIST || !window.HIST.length) {
+    const g = document.getElementById('hst-grid');
+    if (g) g.innerHTML = '<div class="hst-card hst-full" style="text-align:center;color:var(--muted);padding:40px">No hay histórico disponible.</div>';
+  }
 }
 
 autoLoadFromServer();

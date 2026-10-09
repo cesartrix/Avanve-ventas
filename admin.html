@@ -6,6 +6,7 @@
 <title>Admin — Dashboard Ventas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@700;800&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg: #0a0b0f;
@@ -118,6 +119,23 @@
   .dias-resumen { display:flex; justify-content:space-between; font-size:0.72rem; color: var(--muted); margin-top:12px; }
   .dias-resumen strong { color: var(--text); font-size:0.85rem; }
   .dias-nota { font-size:0.65rem; color: var(--muted); margin-top:6px; line-height:1.5; }
+  /* Objetivos y horas */
+  .mes-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
+  input[type="month"] { background: var(--bg); border:1px solid var(--border); border-radius:8px; color: var(--text); font-family: var(--mono); font-size:0.8rem; padding:8px 10px; color-scheme: dark; }
+  .preview { display:none; background: var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:6px; font-size:0.72rem; }
+  .preview.show { display:block; }
+  .pv-title { font-family: var(--head); font-size:0.8rem; font-weight:700; margin-bottom:8px; }
+  .pv-row { display:flex; justify-content:space-between; gap:10px; padding:5px 0; border-bottom:1px solid var(--border); }
+  .pv-row:last-of-type { border-bottom:none; }
+  .pv-row .pv-l { color: var(--muted); }
+  .pv-row .pv-v { color: var(--text); text-align:right; }
+  .pv-row.total .pv-l, .pv-row.total .pv-v { color: var(--text); font-weight:500; }
+  .pv-ok { color: var(--accent); }
+  .pv-warn { color: #ffcc00; }
+  .pv-avisos { margin-top:8px; color:#ffcc00; line-height:1.55; }
+  .pv-avisos div::before { content:'⚠ '; }
+  .meses-cargados { margin-top:6px; line-height:1.6; }
+  .meses-cargados span { color: var(--text); }
 </style>
 </head>
 <body>
@@ -136,15 +154,20 @@
   <!-- APP -->
   <div id="app-section">
     <div class="logo">Dashboard Ventas</div>
-    <h1>Subir<br><span>Excel</span></h1>
+    <h1>Objetivos<br><span>y horas</span></h1>
 
-    <div class="current-info" id="current-info">Verificando archivo actual…</div>
+    <div class="current-info" id="current-info">Verificando objetivos cargados…</div>
+
+    <div class="mes-row">
+      <label for="obj-mes" style="margin:0">Mes de los objetivos</label>
+      <input type="month" id="obj-mes" onchange="onMesObj()">
+    </div>
 
     <div class="drop-zone" id="drop-zone">
       <input type="file" accept=".xlsx" id="file-input" onchange="onFileChosen(this)">
-      <div class="drop-icon">📊</div>
-      <div class="drop-label">Arrastrá el archivo acá</div>
-      <div class="drop-sub">o hacé click para seleccionar · Solo .xlsx</div>
+      <div class="drop-icon">🎯</div>
+      <div class="drop-label">Arrastrá el Excel de objetivos y horas</div>
+      <div class="drop-sub">o hacé click para seleccionar · Solo .xlsx<br>Hoja 1: Supervisor · Vendedor · Objetivo — Hoja 2: Vendedor · Promedio mensual</div>
     </div>
 
     <div class="file-info" id="file-info">
@@ -156,8 +179,9 @@
       <button class="fi-clear" onclick="clearFile()">✕</button>
     </div>
 
-    <button class="btn" id="upload-btn" onclick="doUpload()" disabled>Subir archivo</button>
-    <div class="progress-wrap" id="progress-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+    <div class="preview" id="preview"></div>
+
+    <button class="btn" id="upload-btn" onclick="doUpload()" disabled>Guardar objetivos y horas</button>
     <div class="status-bar" id="status-bar"></div>
 
     <hr class="divider">
@@ -185,11 +209,22 @@
 
 <script>
   let selectedFile = null;
+  let parsed = null;          // resultado de leer el Excel de objetivos y horas
+  let objCfg = {};            // lo guardado en el servidor (data/objetivos.json)
   let adminPassword = '';
+
+  // Supervisores que el tablero conoce (mismo criterio que normSup() del dashboard)
+  const SUP_CONOCIDOS = ['MARTIN PREVENTA', 'PREVENTA', 'MARTIN', 'CRISTIAN', 'GONZALO', 'MAXI'];
+  const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const hoyAR = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }); // AAAA-MM-DD
+  const mesTxt = mes => { const [y, m] = mes.split('-').map(Number); return `${MESES[m - 1]} ${y}`; };
+  const fmt = v => '$' + Math.round(v).toLocaleString('es-AR');
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   document.getElementById('pwd-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
   });
+  document.getElementById('obj-mes').value = hoyAR().slice(0, 7);
 
   function doLogin() {
     const pwd = document.getElementById('pwd-input').value.trim();
@@ -204,38 +239,73 @@
   async function loadCurrentInfo() {
     const el = document.getElementById('current-info');
     try {
-      const r = await fetch('/api/data-url');
-      if (r.status === 404) {
-        el.innerHTML = '<strong>Sin archivo cargado</strong>No hay ningún Excel en el sistema todavía.';
-        return;
-      }
-      const d = await r.json();
-      const kb = (d.size / 1024).toFixed(1);
-      el.innerHTML = `<strong>Archivo actual</strong>${kb} KB · <a href="${d.url}" target="_blank" style="color:var(--accent)">Descargar</a>`;
+      const r = await fetch('/api/objetivos', { cache: 'no-store' });
+      if (!r.ok) throw new Error();
+      objCfg = await r.json();
     } catch {
       el.innerHTML = '<strong>No se pudo verificar</strong>Error al conectar con el servidor.';
+      return;
     }
+    renderCurrentInfo();
+    updateBtn();
+  }
+
+  function renderCurrentInfo() {
+    const el = document.getElementById('current-info');
+    const meses = Object.keys(objCfg).filter(k => /^\d{4}-\d{2}$/.test(k)).sort().reverse();
+    if (!meses.length) {
+      el.innerHTML = '<strong>Sin objetivos cargados</strong>Subí el Excel de objetivos y horas del mes.';
+      return;
+    }
+    const mesSel = document.getElementById('obj-mes').value;
+    const lineas = meses.slice(0, 4).map(m => {
+      const o = objCfg[m] || {};
+      const f = o.subido ? new Date(o.subido).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+      return `<div>${m === mesSel ? '▸ ' : ''}<span style="text-transform:capitalize">${mesTxt(m)}</span>: <span>${(o.vendedores || []).length}</span> vendedores · <span>${(o.horas || []).length}</span> con horas · subido ${f}</div>`;
+    }).join('');
+    el.innerHTML = `<strong>Objetivos cargados</strong><div class="meses-cargados">${lineas}</div>` +
+      (objCfg[mesSel] ? '' : `<div class="pv-warn" style="margin-top:6px">Falta cargar ${mesTxt(mesSel)}.</div>`);
+  }
+
+  function onMesObj() { renderCurrentInfo(); updateBtn(); }
+
+  function updateBtn() {
+    const btn = document.getElementById('upload-btn');
+    const mes = document.getElementById('obj-mes').value;
+    btn.disabled = !parsed || !mes;
+    btn.textContent = mes && objCfg[mes] ? `Reemplazar objetivos de ${mesTxt(mes)}` : `Guardar objetivos de ${mes ? mesTxt(mes) : '…'}`;
   }
 
   function onFileChosen(inp) { if (inp.files[0]) setFile(inp.files[0]); }
 
-  function setFile(file) {
-    if (!file.name.endsWith('.xlsx')) { showStatus('err', '⚠️ Solo se aceptan archivos .xlsx'); return; }
+  async function setFile(file) {
+    if (!file.name.toLowerCase().endsWith('.xlsx')) { showStatus('err', '⚠️ Solo se aceptan archivos .xlsx'); return; }
     selectedFile = file;
+    parsed = null;
     document.getElementById('fi-name').textContent = file.name;
     document.getElementById('fi-size').textContent = (file.size / 1024).toFixed(1) + ' KB';
     document.getElementById('file-info').classList.add('show');
     document.getElementById('drop-zone').style.display = 'none';
-    document.getElementById('upload-btn').disabled = false;
     hideStatus();
+    try {
+      const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+      parsed = leerObjetivos(wb);
+      renderPreview(parsed);
+    } catch (err) {
+      document.getElementById('preview').className = 'preview';
+      showStatus('err', '❌ ' + err.message);
+    }
+    updateBtn();
   }
 
   function clearFile() {
     selectedFile = null;
+    parsed = null;
     document.getElementById('file-input').value = '';
     document.getElementById('file-info').classList.remove('show');
     document.getElementById('drop-zone').style.display = 'block';
-    document.getElementById('upload-btn').disabled = true;
+    document.getElementById('preview').className = 'preview';
+    updateBtn();
     hideStatus();
   }
 
@@ -244,63 +314,147 @@
   dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
   dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) setFile(f); });
 
-  // Vercel corta requests de más de ~4.5 MB ("Request Entity Too Large"),
-  // así que el Excel se sube en partes de 3 MB y el servidor las une.
-  const CHUNK = 3 * 1024 * 1024;
+  // ===== Lectura del Excel de objetivos y horas =====
+  // Hoja de objetivos: la que tiene un encabezado con OBJETIVO (columnas SUPERVISOR | VENDEDOR | OBJETIVO).
+  //   El supervisor se escribe en la primera fila de su grupo; las filas sin vendedor con un número son
+  //   subtotales; la fila GENERAL es el total.
+  // Hoja de horas: la que tiene un encabezado PROMEDIO (columnas Vendedor | … | Promedio Mensual, en hh:mm:ss).
+  const isBlank = v => v === null || v === undefined || String(v).trim() === '';
+  const num = v => { const f = typeof v === 'number' ? v : parseFloat(String(v).replace(/\./g, '').replace(',', '.')); return isFinite(f) ? f : 0; };
+  const venRe = /^\s*(\d+)\s*-\s*(.+?)\s*$/;
+
+  function hojaCon(wb, re) {
+    for (const name of wb.SheetNames) {
+      const raw = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null });
+      const h = raw.findIndex((r, i) => i < 10 && r && r.some(c => re.test(String(c || ''))));
+      if (h > -1) return { name, raw, h, head: raw[h].map(c => String(c || '').trim().toUpperCase()) };
+    }
+    return null;
+  }
+
+  function aHoras(v) {
+    if (typeof v === 'number') return v < 1 ? v * 24 : v; // fracción de día de Excel (o ya en horas)
+    if (v instanceof Date) return v.getHours() + v.getMinutes() / 60 + v.getSeconds() / 3600;
+    const m = String(v || '').trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}(?:[.,]\d+)?))?$/);
+    return m ? +m[1] + +m[2] / 60 + (m[3] ? parseFloat(m[3].replace(',', '.')) / 3600 : 0) : 0;
+  }
+
+  function leerObjetivos(wb) {
+    const ho = hojaCon(wb, /OBJETIVO/i);
+    if (!ho) throw new Error('No se encontró la hoja de objetivos (falta el encabezado OBJETIVO).');
+    const iSup = ho.head.findIndex(h => h.includes('SUPERVISOR'));
+    const iVen = ho.head.findIndex(h => h.includes('VENDEDOR'));
+    const iObj = ho.head.findIndex(h => h.includes('OBJETIVO'));
+    if (iSup < 0 || iVen < 0) throw new Error(`En la hoja "${ho.name}" faltan las columnas SUPERVISOR y VENDEDOR.`);
+
+    const vendedores = [], subtotales = {}, avisos = [];
+    let general = null, sup = null;
+    for (let i = ho.h + 1; i < ho.raw.length; i++) {
+      const r = ho.raw[i]; if (!r) continue;
+      const s = r[iSup], v = r[iVen], o = num(r[iObj]);
+      if (!isBlank(s)) {
+        const st = String(s).trim().toUpperCase();
+        if (/^(GENERAL|TOTAL)/.test(st)) { if (o > 0) general = o; continue; }
+        sup = st;
+      }
+      if (isBlank(v)) { if (o > 0 && sup && isBlank(s)) subtotales[sup] = o; continue; }
+      const m = String(v).match(venRe);
+      if (!m) continue;
+      if (!sup) { avisos.push(`${m[1]} - ${m[2]}: no tiene supervisor arriba, no se carga.`); continue; }
+      if (!(o > 0)) { avisos.push(`${m[1]} - ${m[2]}: sin objetivo, no se carga.`); continue; }
+      if (vendedores.some(x => x.codigo === m[1])) { avisos.push(`Vendedor ${m[1]} repetido: se toma la primera fila.`); continue; }
+      vendedores.push({ codigo: m[1], nombre: m[2], supervisor: sup, objetivo: o });
+    }
+    if (!vendedores.length) throw new Error(`No se encontraron vendedores con objetivo en la hoja "${ho.name}".`);
+
+    // Horas (opcional: si no hay hoja de horas, se guardan solo los objetivos)
+    const horas = [];
+    const hh = hojaCon(wb, /PROMEDIO/i);
+    if (!hh) avisos.push('No se encontró la hoja de horas (encabezado "Promedio Mensual"): se guardan solo los objetivos.');
+    else {
+      const iH = hh.head.findIndex(h => h.includes('PROMEDIO'));
+      let iV = hh.head.findIndex(h => h.includes('VENDEDOR'));
+      for (let i = hh.h + 1; i < hh.raw.length; i++) {
+        const r = hh.raw[i]; if (!r) continue;
+        let m = null;
+        for (const c of (iV > -1 ? [r[iV], ...r] : r)) { if (!isBlank(c) && (m = String(c).match(venRe))) break; }
+        if (!m) continue;
+        const h = aHoras(r[iH]);
+        if (!(h > 0 && h < 24)) continue;
+        if (horas.some(x => x.codigo === m[1])) continue;
+        horas.push({ codigo: m[1], nombre: m[2], horas: +h.toFixed(4) });
+      }
+      const sinObj = horas.filter(h => !vendedores.some(v => v.codigo === h.codigo));
+      if (sinObj.length) avisos.push(`Con horas pero sin objetivo (no se muestran): ${sinObj.map(h => h.codigo + ' - ' + h.nombre).join(', ')}.`);
+    }
+
+    const supsNuevos = [...new Set(vendedores.map(v => v.supervisor))].filter(s => !SUP_CONOCIDOS.some(k => s.includes(k)));
+    supsNuevos.forEach(s => avisos.push(`Supervisor "${s}" no está configurado en el tablero: sus vendedores van a aparecer sin supervisor.`));
+    return { hoja: ho.name, hojaHoras: hh ? hh.name : null, vendedores, horas, subtotales, general, avisos };
+  }
+
+  function renderPreview(p) {
+    const grupos = {};
+    p.vendedores.forEach(v => { (grupos[v.supervisor] = grupos[v.supervisor] || []).push(v); });
+    const tol = v => Math.abs(v) < 1;
+    let h = `<div class="pv-title">Vista previa · ${p.vendedores.length} vendedores</div>`;
+    Object.entries(grupos).forEach(([s, g]) => {
+      const tot = g.reduce((a, v) => a + v.objetivo, 0);
+      const st = p.subtotales[s];
+      const chk = st == null ? '' : tol(st - tot) ? ' <span class="pv-ok">✓</span>' : ` <span class="pv-warn" title="Subtotal del Excel: ${fmt(st)}">≠ ${fmt(st)}</span>`;
+      h += `<div class="pv-row"><span class="pv-l">${esc(s)} (${g.length})</span><span class="pv-v">${fmt(tot)}${chk}</span></div>`;
+    });
+    const tot = p.vendedores.reduce((a, v) => a + v.objetivo, 0);
+    const chkG = p.general == null ? '' : tol(p.general - tot) ? ' <span class="pv-ok">✓</span>' : ` <span class="pv-warn">≠ ${fmt(p.general)}</span>`;
+    h += `<div class="pv-row total"><span class="pv-l">Objetivo total</span><span class="pv-v">${fmt(tot)}${chkG}</span></div>`;
+    const sinH = p.vendedores.filter(v => !p.horas.some(x => x.codigo === v.codigo));
+    h += `<div class="pv-row"><span class="pv-l">Horas en ruta</span><span class="pv-v">${p.vendedores.length - sinH.length} de ${p.vendedores.length} vendedores</span></div>`;
+    const avisos = [...p.avisos];
+    if (p.general != null && !tol(p.general - tot))
+      avisos.unshift(`La fila GENERAL del Excel (${fmt(p.general)}) no coincide con la suma de los vendedores (${fmt(tot)}): el tablero usa la suma.`);
+    if (p.horas.length && sinH.length) avisos.push(`Sin horas: ${sinH.map(v => v.codigo + ' - ' + v.nombre).join(', ')}.`);
+    if (avisos.length) h += `<div class="pv-avisos">${avisos.map(a => `<div>${esc(a)}</div>`).join('')}</div>`;
+    const el = document.getElementById('preview');
+    el.innerHTML = h;
+    el.className = 'preview show';
+  }
 
   async function postJSON(url, body, headers) {
     const resp = await fetch(url, { method: 'POST', headers, body });
     const text = await resp.text();
     let data;
     try { data = JSON.parse(text); }
-    catch {
-      if (resp.status === 413) throw new Error('El archivo es demasiado grande para el servidor (413).');
-      throw new Error('Respuesta inesperada del servidor (' + resp.status + '): ' + text.slice(0, 120));
-    }
+    catch { throw new Error('Respuesta inesperada del servidor (' + resp.status + '): ' + text.slice(0, 120)); }
     if (!resp.ok) throw new Error(data.error || resp.statusText);
     return data;
   }
 
   async function doUpload() {
-    if (!selectedFile) return;
+    const mes = document.getElementById('obj-mes').value;
+    if (!parsed || !mes) return;
+    if (objCfg[mes] && !confirm(`Ya hay objetivos cargados para ${mesTxt(mes)}. ¿Reemplazarlos?`)) return;
     const btn = document.getElementById('upload-btn');
     btn.disabled = true;
-    btn.textContent = '⏳ Subiendo…';
-    showProgress(5);
-
-    const base = '/api/upload?pwd=' + encodeURIComponent(adminPassword);
+    btn.textContent = '⏳ Guardando…';
+    showStatus('loading', '<span class="spin">⟳</span> Guardando objetivos y horas…');
     try {
-      const total = Math.max(1, Math.ceil(selectedFile.size / CHUNK));
-      const parts = [];
-      for (let i = 0; i < total; i++) {
-        showStatus('loading', `<span class="spin">⟳</span> Subiendo parte ${i + 1} de ${total}…`);
-        const blob = selectedFile.slice(i * CHUNK, (i + 1) * CHUNK);
-        const d = await postJSON(base + '&mode=part', blob, { 'Content-Type': 'application/octet-stream' });
-        parts.push(d.sha);
-        showProgress(5 + Math.round(75 * (i + 1) / total));
-      }
-      showStatus('loading', '<span class="spin">⟳</span> Guardando archivo…');
-      await postJSON(base + '&mode=finalize', JSON.stringify({ parts }), { 'Content-Type': 'application/json' });
-      showProgress(100);
-      showStatus('ok', '✅ Archivo subido exitosamente');
-      btn.textContent = '✓ Subido';
+      const body = { mes, archivo: selectedFile ? selectedFile.name : '', vendedores: parsed.vendedores, horas: parsed.horas, subtotales: parsed.subtotales, general: parsed.general };
+      const d = await postJSON('/api/objetivos?pwd=' + encodeURIComponent(adminPassword), JSON.stringify(body), { 'Content-Type': 'application/json' });
+      objCfg[mes] = { ...body, subido: new Date().toISOString() };
       clearFile();
-      setTimeout(() => { btn.textContent = 'Subir archivo'; hideProgress(); }, 2000);
-      loadCurrentInfo();
+      showStatus('ok', `✅ Guardado ${mesTxt(mes)}: ${d.vendedores} vendedores con objetivo y ${d.horas} con horas. El tablero ya los toma al recargar.`);
+      renderCurrentInfo();
     } catch (err) {
       showStatus('err', '❌ Error: ' + err.message);
-      btn.disabled = false; btn.textContent = 'Subir archivo'; hideProgress();
+    } finally {
+      updateBtn();
     }
   }
 
   function showStatus(type, msg) { const el = document.getElementById('status-bar'); el.className = 'status-bar show ' + type; el.innerHTML = msg; }
   function hideStatus() { document.getElementById('status-bar').className = 'status-bar'; }
-  function showProgress(pct) { document.getElementById('progress-wrap').classList.add('show'); document.getElementById('progress-bar').style.width = pct + '%'; }
-  function hideProgress() { document.getElementById('progress-wrap').classList.remove('show'); document.getElementById('progress-bar').style.width = '0%'; }
 
   // ===== Días de trabajo por mes =====
-  const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  const hoyAR = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }); // AAAA-MM-DD
   let diasCfg = {};            // lo guardado en el servidor
   let mesSel = hoyAR().slice(0, 7);
   let diasSel = new Set();     // días marcados del mes que se está editando
