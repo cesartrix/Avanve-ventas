@@ -972,8 +972,12 @@ function renderAv(){
     const _covGrp=group.map(x=>covOf(x.codigo)).filter(Boolean);
     const gCCC=_covGrp.reduce((s,c)=>s+(c.ccc||0),0), gCAR=_covGrp.reduce((s,c)=>s+(c.cartera||0),0);
     const tMN=group.reduce((s,x)=>s+(x.media_nec||0),0)/group.length;
-    const _skuGrp=group.filter(x=>x.cantidad_sku!=null);
-    const tSku=_skuGrp.length?Math.round(_skuGrp.reduce((s,x)=>s+x.cantidad_sku,0)/_skuGrp.length):null;
+    // SKU del grupo: artículos distintos vendidos por todos sus vendedores juntos
+    // (un artículo vendido por varios vendedores del grupo cuenta una sola vez).
+    const _skuDet=window.SKU_PROV_DETAIL||{};
+    const _skuSet=new Set();
+    group.forEach(x=>(_skuDet[x.codigo]||[]).forEach(p=>(p.articulos||[]).forEach(a=>_skuSet.add(String(a.codigo||a.descripcion)))));
+    const tSku=_skuSet.size?_skuSet.size:(group.some(x=>x.cantidad_sku!=null)?0:null);
     const dvGrp = group.reduce((acc,x)=>{
       if(!x.dia_visita) return acc;
       acc.LUJU+=x.dia_visita.LUJU||0; acc.MAVI+=x.dia_visita.MAVI||0; acc.MISA+=x.dia_visita.MISA||0; acc.total+=x.dia_visita.total||0;
