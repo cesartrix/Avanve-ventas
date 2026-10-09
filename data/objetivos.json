@@ -1,0 +1,439 @@
+{
+ "2026-10": {
+  "subido": "2026-10-09T17:36:22.816Z",
+  "archivo": "Objetivos Octubre y horas.xlsx",
+  "vendedores": [
+   {
+    "codigo": "20",
+    "nombre": "FLORES JAVIER",
+    "supervisor": "MARTIN PREVENTA",
+    "objetivo": 34929769.85363063
+   },
+   {
+    "codigo": "19",
+    "nombre": "GONZALEZ MARCELO",
+    "supervisor": "MARTIN PREVENTA",
+    "objetivo": 33526967.851476792
+   },
+   {
+    "codigo": "16",
+    "nombre": "GOMEZ MATÍAS",
+    "supervisor": "MARTIN PREVENTA",
+    "objetivo": 30721363.84716911
+   },
+   {
+    "codigo": "12",
+    "nombre": "GUTIERREZ MARCOS DAVID",
+    "supervisor": "MARTIN PREVENTA",
+    "objetivo": 30721363.84716911
+   },
+   {
+    "codigo": "11",
+    "nombre": "SANCHEZ RICARDO",
+    "supervisor": "MARTIN PREVENTA",
+    "objetivo": 25460856.339092206
+   },
+   {
+    "codigo": "8",
+    "nombre": "PARRA MAXIMILIANO",
+    "supervisor": "MARTIN PREVENTA",
+    "objetivo": 30019962.84609219
+   },
+   {
+    "codigo": "5",
+    "nombre": "SCHELOVER RAUL",
+    "supervisor": "MARTIN PREVENTA",
+    "objetivo": 38773447.33953216
+   },
+   {
+    "codigo": "4",
+    "nombre": "TUR SPRINGER FERNANDO",
+    "supervisor": "MARTIN PREVENTA",
+    "objetivo": 38773447.33953216
+   },
+   {
+    "codigo": "22",
+    "nombre": "ALMIRON NICOLAS",
+    "supervisor": "MARTIN",
+    "objetivo": 104935090.94542944
+   },
+   {
+    "codigo": "15",
+    "nombre": "GALARZA GERARDO",
+    "supervisor": "MARTIN",
+    "objetivo": 138904904.13484105
+   },
+   {
+    "codigo": "52",
+    "nombre": "RAVAROTTO EMANUEL",
+    "supervisor": "MARTIN",
+    "objetivo": 45934889.09013556
+   },
+   {
+    "codigo": "53",
+    "nombre": "SANDOVAL RODRIGO",
+    "supervisor": "MARTIN",
+    "objetivo": 45934889.09013556
+   },
+   {
+    "codigo": "2",
+    "nombre": "OJEDA NORBERTO",
+    "supervisor": "CRISTIAN",
+    "objetivo": 26000000
+   },
+   {
+    "codigo": "3",
+    "nombre": "VIDAL NAHUEL",
+    "supervisor": "CRISTIAN",
+    "objetivo": 27400000
+   },
+   {
+    "codigo": "18",
+    "nombre": "HERRERA PABLO",
+    "supervisor": "CRISTIAN",
+    "objetivo": 27900000
+   },
+   {
+    "codigo": "21",
+    "nombre": "CATAN MATIAS",
+    "supervisor": "CRISTIAN",
+    "objetivo": 39000000
+   },
+   {
+    "codigo": "23",
+    "nombre": "DELGADO JOSÉ",
+    "supervisor": "CRISTIAN",
+    "objetivo": 27800000
+   },
+   {
+    "codigo": "31",
+    "nombre": "RENZO RAMOS",
+    "supervisor": "CRISTIAN",
+    "objetivo": 35500000
+   },
+   {
+    "codigo": "44",
+    "nombre": "MONGES CESAR LUIS",
+    "supervisor": "CRISTIAN",
+    "objetivo": 30550000
+   },
+   {
+    "codigo": "54",
+    "nombre": "BARTSCHAT EMILIANO NAHUEL",
+    "supervisor": "CRISTIAN",
+    "objetivo": 43000000
+   },
+   {
+    "codigo": "32",
+    "nombre": "CABRAL GONZALO",
+    "supervisor": "GONZALO",
+    "objetivo": 91818726.79623401
+   },
+   {
+    "codigo": "36",
+    "nombre": "IBARROLA JORGE",
+    "supervisor": "GONZALO",
+    "objetivo": 25473061.316451002
+   },
+   {
+    "codigo": "9",
+    "nombre": "ESTIGARRIBIA DAVID",
+    "supervisor": "GONZALO",
+    "objetivo": 28549727.501715004
+   },
+   {
+    "codigo": "40",
+    "nombre": "SOLIS EMMANUEL",
+    "supervisor": "GONZALO",
+    "objetivo": 41575647.23150001
+   },
+   {
+    "codigo": "27",
+    "nombre": "GOMEZ ADRIÁN",
+    "supervisor": "GONZALO",
+    "objetivo": 28538210
+   },
+   {
+    "codigo": "10",
+    "nombre": "BRITEZ EMMANUEL",
+    "supervisor": "GONZALO",
+    "objetivo": 27403047
+   },
+   {
+    "codigo": "28",
+    "nombre": "GOMEZ PABLO",
+    "supervisor": "GONZALO",
+    "objetivo": 29389051.8
+   },
+   {
+    "codigo": "33",
+    "nombre": "ESQUIVEL NICOLAS",
+    "supervisor": "GONZALO",
+    "objetivo": 25473061.316451002
+   },
+   {
+    "codigo": "37",
+    "nombre": "SALAJ EMILIO",
+    "supervisor": "GONZALO",
+    "objetivo": 27350159.013200004
+   },
+   {
+    "codigo": "24",
+    "nombre": "AZULA NICOLAS",
+    "supervisor": "GONZALO",
+    "objetivo": 27989928.392800003
+   },
+   {
+    "codigo": "7",
+    "nombre": "VALLEJOS EDUARDO",
+    "supervisor": "GONZALO",
+    "objetivo": 132678322.214375
+   },
+   {
+    "codigo": "57",
+    "nombre": "FEDERRATH MARTIN",
+    "supervisor": "GONZALO",
+    "objetivo": 41200000
+   },
+   {
+    "codigo": "1",
+    "nombre": "VERA ERNESTO",
+    "supervisor": "GONZALO",
+    "objetivo": 39540234.652887
+   },
+   {
+    "codigo": "58",
+    "nombre": "BLADIMIR LEZCANO",
+    "supervisor": "MAXI",
+    "objetivo": 46350000
+   },
+   {
+    "codigo": "59",
+    "nombre": "LEIVA SILVIO",
+    "supervisor": "MAXI",
+    "objetivo": 30900000
+   },
+   {
+    "codigo": "49",
+    "nombre": "ESCOBAR RAÚL",
+    "supervisor": "MAXI",
+    "objetivo": 51500000
+   },
+   {
+    "codigo": "56",
+    "nombre": "JUAN ANDRES SANCHEZ",
+    "supervisor": "MAXI",
+    "objetivo": 66950000
+   },
+   {
+    "codigo": "26",
+    "nombre": "PUJOL ERNESTO",
+    "supervisor": "MAXI",
+    "objetivo": 103000000
+   },
+   {
+    "codigo": "25",
+    "nombre": "KALATAKI GUSTAVO",
+    "supervisor": "MAXI",
+    "objetivo": 103000000
+   },
+   {
+    "codigo": "60",
+    "nombre": "SILVA ADRIAN",
+    "supervisor": "MAXI",
+    "objetivo": 66950000
+   },
+   {
+    "codigo": "43",
+    "nombre": "LEIVA ALEJANDRO",
+    "supervisor": "MAXI",
+    "objetivo": 51500000
+   }
+  ],
+  "horas": [
+   {
+    "codigo": "2",
+    "nombre": "OJEDA NORBERTO",
+    "horas": 4.831
+   },
+   {
+    "codigo": "3",
+    "nombre": "VIDAL NAHUEL",
+    "horas": 6.6637
+   },
+   {
+    "codigo": "18",
+    "nombre": "HERRERA PABLO",
+    "horas": 6.5882
+   },
+   {
+    "codigo": "21",
+    "nombre": "CATAN MATIAS",
+    "horas": 6.0126
+   },
+   {
+    "codigo": "23",
+    "nombre": "DELGADO JOSÉ",
+    "horas": 6.3785
+   },
+   {
+    "codigo": "31",
+    "nombre": "RENZO RAMOS",
+    "horas": 6.6793
+   },
+   {
+    "codigo": "44",
+    "nombre": "MONGES CESAR LUIS",
+    "horas": 6.2321
+   },
+   {
+    "codigo": "54",
+    "nombre": "BARTSCHAT EMILIANO NAHUEL",
+    "horas": 5.8459
+   },
+   {
+    "codigo": "56",
+    "nombre": "JUAN ANDRES SANCHEZ",
+    "horas": 1.7652
+   },
+   {
+    "codigo": "4",
+    "nombre": "TUR SPRINGER FERNANDO",
+    "horas": 6.5459
+   },
+   {
+    "codigo": "5",
+    "nombre": "SCHELOVER RAUL",
+    "horas": 7.0443
+   },
+   {
+    "codigo": "8",
+    "nombre": "PARRA MAXIMILIANO",
+    "horas": 6.6124
+   },
+   {
+    "codigo": "11",
+    "nombre": "SANCHEZ RICARDO",
+    "horas": 6.4438
+   },
+   {
+    "codigo": "12",
+    "nombre": "GUTIERREZ MARCOS DAVID",
+    "horas": 5.8919
+   },
+   {
+    "codigo": "16",
+    "nombre": "GOMEZ MATÍAS",
+    "horas": 6.1098
+   },
+   {
+    "codigo": "19",
+    "nombre": "GONZALEZ MARCELO",
+    "horas": 6.1806
+   },
+   {
+    "codigo": "20",
+    "nombre": "FLORES JAVIER",
+    "horas": 6.3051
+   },
+   {
+    "codigo": "49",
+    "nombre": "ESCOBAR RAÚL",
+    "horas": 6.1459
+   },
+   {
+    "codigo": "1",
+    "nombre": "VERA ERNESTO",
+    "horas": 6.3012
+   },
+   {
+    "codigo": "9",
+    "nombre": "ESTIGARRIBIA DAVID",
+    "horas": 5.3295
+   },
+   {
+    "codigo": "10",
+    "nombre": "BRITEZ EMMANUEL",
+    "horas": 5.4061
+   },
+   {
+    "codigo": "24",
+    "nombre": "AZULA NICOLAS",
+    "horas": 4.8171
+   },
+   {
+    "codigo": "27",
+    "nombre": "GOMEZ ADRIÁN",
+    "horas": 5.9735
+   },
+   {
+    "codigo": "28",
+    "nombre": "GOMEZ PABLO",
+    "horas": 5.0299
+   },
+   {
+    "codigo": "33",
+    "nombre": "ESQUIVEL NICOLAS",
+    "horas": 5.0274
+   },
+   {
+    "codigo": "36",
+    "nombre": "IBARROLA JORGE",
+    "horas": 4.9881
+   },
+   {
+    "codigo": "37",
+    "nombre": "SALAJ EMILIO",
+    "horas": 5.6535
+   },
+   {
+    "codigo": "40",
+    "nombre": "SOLIS EMMANUEL",
+    "horas": 4.521
+   },
+   {
+    "codigo": "52",
+    "nombre": "RAVAROTTO EMANUEL",
+    "horas": 3.9895
+   },
+   {
+    "codigo": "53",
+    "nombre": "SANDOVAL RODRIGO",
+    "horas": 5.4133
+   },
+   {
+    "codigo": "15",
+    "nombre": "GALARZA GERARDO",
+    "horas": 4.331
+   },
+   {
+    "codigo": "22",
+    "nombre": "ALMIRON NICOLAS",
+    "horas": 4.0475
+   },
+   {
+    "codigo": "7",
+    "nombre": "VALLEJOS EDUARDO",
+    "horas": 2.8137
+   },
+   {
+    "codigo": "32",
+    "nombre": "CABRAL GONZALO",
+    "horas": 2.1652
+   },
+   {
+    "codigo": "57",
+    "nombre": "FEDERRATH MARTIN",
+    "horas": 3.7232
+   }
+  ],
+  "subtotales": {
+   "MARTIN PREVENTA": 262927179.26369438,
+   "MARTIN": 335709773.2605416,
+   "CRISTIAN": 257150000,
+   "GONZALO": 566979177.235613,
+   "MAXI": 520150000
+  },
+  "general": 1942909830.099849
+ }
+}
