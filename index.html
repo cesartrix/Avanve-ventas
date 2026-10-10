@@ -1822,9 +1822,15 @@ function renderHist(idx, btn) {
             const gObj = g.reduce((a,x)=>a+x.objetivo,0);
             const gProy = g.reduce((a,x)=>a+x.proyeccion,0);
             const gCumpl = gObj>0?(gProy/gObj*100).toFixed(1):0;
+            const gFac = g.reduce((a,x)=>a+x.facturacion,0);
+            // Cobertura del grupo = Σ CCC / Σ Cartera de sus vendedores (mismo criterio que el subtotal de Avance/Cobertura)
+            const gCov = g.filter(x=>x.ccc!=null&&x.cartera);
+            const gCcc = gCov.reduce((a,x)=>a+x.ccc,0), gCar = gCov.reduce((a,x)=>a+x.cartera,0);
+            const gCovPct = gCar ? gCcc/gCar*100 : null;
+            const gCovHtml = gCovPct==null ? '—' : '<div style="line-height:1.15">'+gCovPct.toFixed(1)+'%<div style="font-size:0.58rem;color:var(--muted);font-weight:400">'+gCcc.toLocaleString('es-AR')+' / '+gCar.toLocaleString('es-AR')+'</div></div>';
             const _sg = skuGrupoHist(h, g);
             const gSku = _sg.v;
-            return '<tr class="hst-sup-row" data-sup="'+s.replace(/"/g,'')+'" title="Ver evolución mensual del supervisor" style="background:var(--border)"><td colspan="3" style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">📈 '+s+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td><td></td><td style="color:var(--text);font-weight:800">'+(gSku!=null?(_sg.exacto?gSku:'<span title="Promedio por vendedor: este mes no tiene el detalle de artículos de la API">'+gSku+' <small style=\'color:var(--muted)\'>prom.</small></span>'):'—')+'</td></tr>'
+            return '<tr class="hst-sup-row" data-sup="'+s.replace(/"/g,'')+'" title="Ver evolución mensual del supervisor" style="background:var(--border)"><td style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">📈 '+s+'</td><td style="color:var(--text);font-weight:800">'+fmtM(gObj)+'</td><td style="color:var(--text);font-weight:800">'+fmtM(gFac)+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td><td style="color:'+(gCovPct==null?'var(--muted)':gcCov(gCovPct))+';font-weight:800" title="CCC / Cartera del grupo">'+gCovHtml+'</td><td style="color:var(--text);font-weight:800">'+(gSku!=null?(_sg.exacto?gSku:'<span title="Promedio por vendedor: este mes no tiene el detalle de artículos de la API">'+gSku+' <small style=\'color:var(--muted)\'>prom.</small></span>'):'—')+'</td></tr>'
               + g.map(x=>'<tr class="hst-vendor-row" data-cod="'+x.codigo+'" data-nom="'+(getCurName(x.codigo)||x.nombre).replace(/"/g,'')+'"><td style="color:var(--text);padding-left:10px"><span style=\'color:var(--muted);font-size:0.62rem;margin-right:4px\'>'+x.codigo+'</span>'+(getCurName(x.codigo)||x.nombre)+'</td><td>'+fmtM(x.objetivo)+'</td><td>'+fmtM(x.facturacion)+'</td><td style="color:'+gc(x.cumplimiento)+';font-weight:700">'+x.cumplimiento.toFixed(1)+'%</td><td style="color:'+(x.cobertura===null||x.cobertura===undefined?'var(--muted)':gcCov(x.cobertura))+';font-weight:700">'+(x.cobertura===null||x.cobertura===undefined?'—':x.cobertura.toFixed(1)+'%')+'</td><td style="color:var(--text)">'+(x.cantidad_sku!=null?x.cantidad_sku:'—')+'</td></tr>').join('');
           }).join('')}
         </tbody>
