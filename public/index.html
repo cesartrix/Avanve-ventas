@@ -615,6 +615,26 @@ function buildData() {
   buildHorasChart();
 }
 
+// Cobro (comisión) = misma fórmula que la columna L "COBRO" de la hoja AVANCE del Excel:
+//   IFS(cumpl>114%, proy*2%, cumpl>109%, proy*1,5%, cumpl>104%, proy*1,25%, cumpl>99%, proy*1%, si no 0)
+// cumpl = cumplimiento proyectado (proyección / objetivo). Hay vendedores con otra escala.
+const COBRO_ESCALAS = {
+  general:  [[1.14, 0.02],   [1.09, 0.015], [1.04, 0.0125], [0.99, 0.01]],
+  reducida: [[1.14, 0.0125], [1.09, 0.01],  [1.04, 0.0075], [0.99, 0.005]],  // 22, 15, 32, 7
+  sin114:   [[1.09, 0.015],  [1.04, 0.0125], [0.99, 0.01]],                   // 52, 53, 57 (tope 1,5%)
+};
+const COBRO_VENDEDOR = { '22': 'reducida', '15': 'reducida', '32': 'reducida', '7': 'reducida', '52': 'sin114', '53': 'sin114', '57': 'sin114' };
+function cobroTramo(x) {
+  if (!x.objetivo || !(x.proyeccion > 0)) return null;
+  const c = x.proyeccion / x.objetivo;
+  return (COBRO_ESCALAS[COBRO_VENDEDOR[x.codigo]] || COBRO_ESCALAS.general).find(([min]) => c > min) || null;
+}
+function calcCobro(x) { const t = cobroTramo(x); return t ? x.proyeccion * t[1] : 0; }
+function cobroTitle(x) {
+  const t = cobroTramo(x);
+  return t ? `${(t[1] * 100).toLocaleString('es-AR')}% de la proyección (cumpl. > ${Math.round(t[0] * 100)}%)` : 'Cumplimiento proyectado ≤ 99%: sin cobro';
+}
+
 function applyChessApi() {
   window.CHESS_APPLIED = null;
   const api = window.CHESS_API;
@@ -633,6 +653,7 @@ function applyChessApi() {
     x.proyeccion = mr * dias.mes;
     x.cumplimiento = x.objetivo ? +(x.proyeccion / x.objetivo * 100).toFixed(1) : 0;
     x.media_nec = dias.rest > 0 ? r0((x.objetivo - x.facturacion) / dias.rest) : 0;
+    x.cobro = r0(calcCobro(x));
     x.cantidad_sku = api.sku_cur ? (api.sku_cur[x.codigo] ?? 0) : null;
     x.dia_visita = api.dia_visita ? (api.dia_visita[x.codigo] || null) : null;
   });
@@ -943,7 +964,7 @@ function renderAv(){
         <td class="${c>=100?'ph':c>=80?'pm':'pl'}" style="font-weight:700">${c}%</td>
         <td>${(()=>{const cv=covOf(x.codigo);return cccCartHtml(cv?cv.ccc:null,cv?cv.cartera:null);})()}</td>
         <td>${fmt(x.media_nec)}</td>
-        <td>${x.cobro?fmt(x.cobro):'—'}</td>
+        <td title="${cobroTitle(x)}">${x.cobro?fmt(x.cobro):'—'}</td>
         <td style="color:var(--text);font-weight:600">${x.cantidad_sku!=null?x.cantidad_sku:'—'}</td>
         <td>${badge}</td>
       </tr>`;
@@ -958,6 +979,7 @@ function renderAv(){
         <div class="mcr"><span>Cumpl.</span><span style="color:${gc(c)};font-weight:700">${c}%</span></div>
         <div class="mcr"><span>CCC/Cartera</span><span>${(()=>{const cv=covOf(x.codigo);return cv&&cv.cartera?`${(cv.ccc/cv.cartera*100).toFixed(1)}% (${cv.ccc}/${cv.cartera})`:'—';})()}</span></div>
         <div class="mcr"><span>Media nec.</span><span>${fmt(x.media_nec)}</span></div>
+        <div class="mcr"><span>Cobro</span><span title="${cobroTitle(x)}">${x.cobro?fmt(x.cobro):"—"}</span></div>
         <div class="mcr"><span>Cant. SKU</span><span>${x.cantidad_sku!=null?x.cantidad_sku:"—"}</span></div>
       </div>`;
     });
