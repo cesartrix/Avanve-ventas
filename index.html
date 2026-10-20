@@ -641,6 +641,7 @@ function applyChessApi() {
   if (!api || !api.periodo || !api.facturacion) return;
   window.ENTREGAS = api.entregas || null;
   const dias = diasParaCalculo(api.periodo.hasta);
+  window.DIAS_CALC = dias;
   const r0 = v => Math.round(v || 0);
   // ---- Avance: facturación + cálculo de derivados ----
   A.forEach(x => {
@@ -994,7 +995,9 @@ function renderAv(){
     const tc=group.reduce((s,x)=>s+x.cobro,0);
     const _covGrp=group.map(x=>covOf(x.codigo)).filter(Boolean);
     const gCCC=_covGrp.reduce((s,c)=>s+(c.ccc||0),0), gCAR=_covGrp.reduce((s,c)=>s+(c.cartera||0),0);
-    const tMN=group.reduce((s,x)=>s+(x.media_nec||0),0)/group.length;
+    // Media necesaria del supervisor = misma fórmula que el vendedor: (objetivo − facturado) / días restantes
+    const _dRest=(window.DIAS_CALC&&window.DIAS_CALC.rest)||0;
+    const tMN=_dRest>0?Math.round((to-tf)/_dRest):group.reduce((s,x)=>s+(x.media_nec||0),0);
     // SKU del grupo: artículos distintos vendidos por todos sus vendedores juntos
     // (un artículo vendido por varios vendedores del grupo cuenta una sola vez).
     const _skuDet=window.SKU_PROV_DETAIL||{};
@@ -1440,15 +1443,33 @@ function buildSkuPDF(cod, detalle, o){
   doc.text(`${o.resumen(detalle, total)} · Generado ${fechaStr}`, marginX, y);
   y += 10;
 
-  const wCod = 65, wCant = 60;
-  const wDesc = pageW - marginX*2 - wCod - (o.conCantidad ? wCant : 0);
-  const nCols = o.conCantidad ? 3 : 2;
+  // Listado de artículos en DOS columnas: cada fila lleva dos artículos lado a lado
+  // (orden: izquierda → derecha, fila por fila), con un separador angosto entre ambas mitades.
+  const anchoUtil = pageW - marginX*2;
+  const wSep = 10, wCod = 46, wCant = o.conCantidad ? 30 : 0;
+  const wHalf = (anchoUtil - wSep) / 2;
+  const wDesc = wHalf - wCod - wCant;
+  const perHalf = o.conCantidad ? 3 : 2;
+  const nCols = perHalf * 2 + 1;
+  const sepIdx = perHalf;
+  const celdas = a => a ? (o.conCantidad ? [a.codigo || '—', a.descripcion, String(a.cantidad)] : [a.codigo || '—', a.descripcion])
+                        : (o.conCantidad ? ['', '', ''] : ['', '']);
+  const subHead = o.conCantidad ? ['Código', 'Descripción', 'Cant.'] : ['Código', 'Descripción'];
+  const colStyles = {};
+  [0, perHalf + 1].forEach(base => {
+    colStyles[base] = { cellWidth: wCod };
+    colStyles[base + 1] = { cellWidth: wDesc };
+    if (o.conCantidad) colStyles[base + 2] = { cellWidth: wCant, halign: 'right' };
+  });
+  colStyles[sepIdx] = { cellWidth: wSep };
 
   detalle.forEach(prov => {
-    const body = prov.articulos.map(a => o.conCantidad ? [a.codigo || '—', a.descripcion, String(a.cantidad)] : [a.codigo || '—', a.descripcion]);
-    const colStyles = o.conCantidad
-      ? { 0: { cellWidth: wCod }, 1: { cellWidth: wDesc }, 2: { cellWidth: wCant, halign: 'right' } }
-      : { 0: { cellWidth: wCod }, 1: { cellWidth: wDesc } };
+    const arts = prov.articulos;
+    const body = [];
+    for (let i = 0; i < arts.length; i += 2) {
+      const izq = celdas(arts[i]), der = celdas(arts[i + 1]);
+      body.push([...izq, '', ...der]);
+    }
     const titulo = o.conCantidad
       ? `${prov.proveedor}  —  ${prov.cantidad} SKU (${prov.articulos.length} artículos)`
       : `${prov.proveedor}  —  ${prov.articulos.length} artículos sin vender`;
@@ -1457,13 +1478,14 @@ function buildSkuPDF(cod, detalle, o){
       margin: { left: marginX, right: marginX },
       head: [
         [{ content: titulo, colSpan: nCols }],
-        o.conCantidad ? ['Código', 'Descripción', 'Cantidad'] : ['Código', 'Descripción']
+        [...subHead, '', ...subHead]
       ],
       body: body,
       theme: 'grid',
-      styles: { font: 'helvetica', fontSize: 9, cellPadding: 4, textColor: [30,30,30] },
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 3, textColor: [30,30,30], overflow: 'linebreak' },
       columnStyles: colStyles,
       didParseCell: function(data){
+        const esSep = data.column.index === sepIdx;
         if (data.section === 'head') {
           if (data.row.index === 0) {
             data.cell.styles.fillColor = o.headColor;
@@ -1471,13 +1493,17 @@ function buildSkuPDF(cod, detalle, o){
             data.cell.styles.fontStyle = 'bold';
             data.cell.styles.fontSize = 9.5;
             data.cell.styles.halign = 'left';
-          } else {
-            data.cell.styles.fillColor = o.subColor;
-            data.cell.styles.textColor = [40, 40, 40];
-            data.cell.styles.fontStyle = 'bold';
-            data.cell.styles.fontSize = 8.5;
-            if (o.conCantidad && data.column.index === 2) data.cell.styles.halign = 'right';
+            return;
           }
+          data.cell.styles.fillColor = o.subColor;
+          data.cell.styles.textColor = [40, 40, 40];
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fontSize = 8;
+          if (o.conCantidad && (data.column.index === 2 || data.column.index === perHalf + 3)) data.cell.styles.halign = 'right';
+        }
+        if (esSep) {
+          data.cell.styles.fillColor = [255, 255, 255];
+          data.cell.styles.lineWidth = 0;
         }
       },
       alternateRowStyles: { fillColor: [245, 245, 248] },
