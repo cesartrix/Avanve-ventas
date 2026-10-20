@@ -1,6 +1,6 @@
 {
  "2026-10": {
-  "subido": "2026-10-17T14:38:34.152Z",
+  "subido": "2026-10-20T17:34:27.783Z",
   "archivo": "Objetivos Octubre y horas.xlsx",
   "vendedores": [
    {
@@ -254,167 +254,167 @@
    {
     "codigo": "2",
     "nombre": "OJEDA NORBERTO",
-    "horas": 5.2603
+    "horas": 5.483
    },
    {
     "codigo": "3",
     "nombre": "VIDAL NAHUEL",
-    "horas": 6.8206
+    "horas": 6.6141
    },
    {
     "codigo": "18",
     "nombre": "HERRERA PABLO",
-    "horas": 6.5401
+    "horas": 6.6588
    },
    {
     "codigo": "21",
     "nombre": "CATAN MATIAS",
-    "horas": 6.2233
+    "horas": 6.5423
    },
    {
     "codigo": "23",
     "nombre": "DELGADO JOSÉ",
-    "horas": 6.1328
+    "horas": 6.3977
    },
    {
     "codigo": "31",
     "nombre": "RENZO RAMOS",
-    "horas": 6.5643
+    "horas": 6.4314
    },
    {
     "codigo": "44",
     "nombre": "MONGES CESAR LUIS",
-    "horas": 6.1074
+    "horas": 6.2484
    },
    {
     "codigo": "54",
     "nombre": "BARTSCHAT EMILIANO NAHUEL",
-    "horas": 5.7122
+    "horas": 6.0197
    },
    {
     "codigo": "56",
     "nombre": "JUAN ANDRES SANCHEZ",
-    "horas": 3.372
+    "horas": 2.2529
    },
    {
     "codigo": "4",
     "nombre": "TUR SPRINGER FERNANDO",
-    "horas": 6.4699
+    "horas": 6.5285
    },
    {
     "codigo": "5",
     "nombre": "SCHELOVER RAUL",
-    "horas": 7.0821
+    "horas": 7.1023
    },
    {
     "codigo": "8",
     "nombre": "PARRA MAXIMILIANO",
-    "horas": 6.6477
+    "horas": 6.4592
    },
    {
     "codigo": "11",
     "nombre": "SANCHEZ RICARDO",
-    "horas": 6.7952
+    "horas": 6.7685
    },
    {
     "codigo": "12",
     "nombre": "GUTIERREZ MARCOS DAVID",
-    "horas": 5.8955
+    "horas": 5.8806
    },
    {
     "codigo": "16",
     "nombre": "GOMEZ MATÍAS",
-    "horas": 6.0882
+    "horas": 5.9385
    },
    {
     "codigo": "19",
     "nombre": "GONZALEZ MARCELO",
-    "horas": 6.21
+    "horas": 6.0919
    },
    {
     "codigo": "20",
     "nombre": "FLORES JAVIER",
-    "horas": 6.2605
+    "horas": 6.1967
    },
    {
     "codigo": "49",
     "nombre": "ESCOBAR RAÚL",
-    "horas": 6.1755
+    "horas": 6.133
    },
    {
     "codigo": "1",
     "nombre": "VERA ERNESTO",
-    "horas": 6.4069
+    "horas": 6.5716
    },
    {
     "codigo": "9",
     "nombre": "ESTIGARRIBIA DAVID",
-    "horas": 5.3896
+    "horas": 5.3335
    },
    {
     "codigo": "10",
     "nombre": "BRITEZ EMMANUEL",
-    "horas": 5.5737
+    "horas": 5.7611
    },
    {
     "codigo": "24",
     "nombre": "AZULA NICOLAS",
-    "horas": 5.0697
+    "horas": 5.1877
    },
    {
     "codigo": "27",
     "nombre": "GOMEZ ADRIÁN",
-    "horas": 5.8353
+    "horas": 5.6729
    },
    {
     "codigo": "28",
     "nombre": "GOMEZ PABLO",
-    "horas": 5.0446
+    "horas": 5.0537
    },
    {
     "codigo": "33",
     "nombre": "ESQUIVEL NICOLAS",
-    "horas": 5.2815
+    "horas": 5.2738
    },
    {
     "codigo": "36",
     "nombre": "IBARROLA JORGE",
-    "horas": 5.5892
+    "horas": 5.7199
    },
    {
     "codigo": "37",
     "nombre": "SALAJ EMILIO",
-    "horas": 5.8154
+    "horas": 5.8562
    },
    {
     "codigo": "40",
     "nombre": "SOLIS EMMANUEL",
-    "horas": 3.9617
+    "horas": 4.4514
    },
    {
     "codigo": "52",
     "nombre": "RAVAROTTO EMANUEL",
-    "horas": 4.0647
+    "horas": 4.1321
    },
    {
     "codigo": "53",
     "nombre": "SANDOVAL RODRIGO",
-    "horas": 5.1223
+    "horas": 5.1376
    },
    {
     "codigo": "15",
     "nombre": "GALARZA GERARDO",
-    "horas": 4.4046
+    "horas": 4.3323
    },
    {
     "codigo": "22",
     "nombre": "ALMIRON NICOLAS",
-    "horas": 4.3389
+    "horas": 4.5848
    },
    {
     "codigo": "7",
     "nombre": "VALLEJOS EDUARDO",
-    "horas": 3.1417
+    "horas": 3.185
    },
    {
     "codigo": "32",
@@ -424,7 +424,7 @@
    {
     "codigo": "57",
     "nombre": "FEDERRATH MARTIN",
-    "horas": 3.7462
+    "horas": 3.8979
    }
   ],
   "subtotales": {
