@@ -3008,7 +3008,9 @@ function mapaPanel() {
   if (!mapa.vend) {
     const vis = mapaVisibles().foco;
     const sups = cur === 'TODOS' ? SUPS.filter(s => s !== 'SIN SUPERVISOR') : [cur];
-    el.innerHTML = `<div class="mapa-res"><b>${nGeo(vis)}</b> clientes en el mapa · ${nCli(vis) - nGeo(vis)} sin ubicación</div>` +
+    const sinCoords = !mapa.data.clientes.some(c => c.lat != null)
+      ? `<div class="mapa-hint" style="color:var(--warn)">Ningún cliente vino con coordenadas desde Chess. Revisar salida/clientes_muestra.json en la carpeta de chess_sync.</div>` : '';
+    el.innerHTML = `<div class="mapa-res"><b>${nGeo(vis)}</b> clientes en el mapa · ${nCli(vis) - nGeo(vis)} sin ubicación</div>` + sinCoords +
       (mapa.color === 'compra' ? leyendaCompra : `<div class="mapa-ley">${sups.map(s => `<span><i style="background:${sc(s)}"></i>${SL[s] || s}</span>`).join('')}</div>`) +
       empty('Elegí un vendedor para ver sus rutas y dibujar la zona de cada una.');
     return;
