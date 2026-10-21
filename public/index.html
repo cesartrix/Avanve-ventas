@@ -2823,7 +2823,8 @@ async function initMapa() {
 
 function mapaVendedores() {
   const cods = [...new Set(Object.values(mapa.data.rutas).map(r => String(r.vendedor)))]
-    .filter(c => c && c !== 'undefined' && (cur === 'TODOS' || mapaSup(c) === cur));
+    // Solo vendedores con supervisor (los "SIN SUPERVISOR" y los que no están en los objetivos no se muestran).
+    .filter(c => c && c !== 'undefined' && mapaSup(c) !== 'SIN SUPERVISOR' && (cur === 'TODOS' || mapaSup(c) === cur));
   return cods.sort((a, b) => mapaVendNombre(a).localeCompare(mapaVendNombre(b)));
 }
 
