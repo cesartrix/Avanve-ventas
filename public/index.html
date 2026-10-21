@@ -2835,7 +2835,9 @@ function mapaVisibles() {
   const rutasOk = r => { const x = mapa.data.rutas[r]; return x && vendsOk.has(String(x.vendedor)); };
   if (mapa.ruta) return { foco: mapa.clientesPorRuta[mapa.ruta] || [], resto: mapa.vend ? mapaRutasDe(mapa.vend).filter(r => r !== mapa.ruta).flatMap(r => mapa.clientesPorRuta[r] || []) : [] };
   if (mapa.vend) return { foco: mapaRutasDe(mapa.vend).flatMap(r => mapa.clientesPorRuta[r] || []), resto: [] };
-  return { foco: mapa.data.clientes.filter(c => (c.r || []).some(rutasOk)), resto: [] };
+  // Vista general: los clientes activos sin ruta vigente van en gris (solo con "Todos" los supervisores).
+  return { foco: mapa.data.clientes.filter(c => (c.r || []).some(rutasOk)),
+           resto: cur === 'TODOS' ? mapa.data.clientes.filter(c => !(c.r || []).length) : [] };
 }
 function mapaRutaVisible(c) {
   // La ruta con la que se pinta un cliente: la elegida, o la primera del vendedor elegido, o la primera visible.
@@ -2851,7 +2853,7 @@ function mapaColorCliente(c) {
   return mapaRutaColor(r);
 }
 function mapaPopup(c) {
-  const rutas = (c.r || []).map(r => {
+  const rutas = !(c.r || []).length ? '<div style="margin-top:2px;color:#777">Sin ruta de venta vigente</div>' : (c.r || []).map(r => {
     const x = mapa.data.rutas[r] || {};
     return `<div style="margin-top:2px"><b>${mapaEsc(mapaRutaTxt(r))}</b><br><span style="color:#777">${mapaEsc(x.vendedor)} · ${mapaEsc(mapaVendNombre(x.vendedor))}</span></div>`;
   }).join('');
@@ -3010,7 +3012,9 @@ function mapaPanel() {
     const sups = cur === 'TODOS' ? SUPS.filter(s => s !== 'SIN SUPERVISOR') : [cur];
     const sinCoords = !mapa.data.clientes.some(c => c.lat != null)
       ? `<div class="mapa-hint" style="color:var(--warn)">Ningún cliente vino con coordenadas desde Chess. Revisar salida/clientes_muestra.json en la carpeta de chess_sync.</div>` : '';
-    el.innerHTML = `<div class="mapa-res"><b>${nGeo(vis)}</b> clientes en el mapa · ${nCli(vis) - nGeo(vis)} sin ubicación</div>` + sinCoords +
+    const sinRuta = cur === 'TODOS' ? mapa.data.clientes.filter(c => !(c.r || []).length) : [];
+    el.innerHTML = `<div class="mapa-res"><b>${nGeo(vis)}</b> clientes de rutas en el mapa · ${nCli(vis) - nGeo(vis)} sin ubicación</div>` +
+      (sinRuta.length ? `<div class="mapa-res"><b>${nGeo(sinRuta)}</b> clientes sin ruta (en gris)</div>` : '') + sinCoords +
       (mapa.color === 'compra' ? leyendaCompra : `<div class="mapa-ley">${sups.map(s => `<span><i style="background:${sc(s)}"></i>${SL[s] || s}</span>`).join('')}</div>`) +
       empty('Elegí un vendedor para ver sus rutas y dibujar la zona de cada una.');
     return;
