@@ -583,12 +583,16 @@ function buildData() {
   if (!sel) throw new Error('No hay objetivos cargados. Subí el Excel de objetivos y horas desde el panel admin.');
   window.OBJ_SEL = sel;
 
+  // Nombre del vendedor: manda el de la API de Chess (api.vendedores[cod].nombre); si viene vacío
+  // o el código no está en la API, queda el del Excel de objetivos.
+  const apiVend = (api && api.vendedores) || {};
+  const nombreApi = cod => String((apiVend[cod] && apiVend[cod].nombre) || '').trim();
   A = [];
   sel.data.vendedores.forEach(v => {
     const cod = String(v.codigo);
     if (A.some(x => x.codigo === cod)) return;
     A.push({
-      nombre: String(v.nombre || '').trim(), codigo: cod,
+      nombre: nombreApi(cod) || String(v.nombre || '').trim(), codigo: cod,
       supervisor: NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : (normSup(v.supervisor) || 'SIN SUPERVISOR'),
       objetivo: Math.round(+v.objetivo || 0),
       facturacion: 0, facturacion_dia: 0, avance_pct: 0, proyeccion: 0, cumplimiento: 0,
@@ -611,7 +615,7 @@ function buildData() {
   // Horas en ruta (promedio mensual) del mismo Excel de objetivos
   window.HORAS = (sel.data.horas || [])
     .filter(h => +h.horas > 0)
-    .map(h => ({ cod: String(h.codigo), nombre: String(h.nombre || '').trim(), horas: +(+h.horas).toFixed(3), supervisor: getCurSup(h.codigo) || 'SIN SUPERVISOR' }));
+    .map(h => ({ cod: String(h.codigo), nombre: getCurName(h.codigo) || nombreApi(String(h.codigo)) || String(h.nombre || '').trim(), horas: +(+h.horas).toFixed(3), supervisor: getCurSup(h.codigo) || 'SIN SUPERVISOR' }));
   buildHorasChart();
 }
 
