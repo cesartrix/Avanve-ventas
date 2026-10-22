@@ -21,6 +21,11 @@
 @media(max-width:900px){#mapa-map{height:62vh;min-height:340px;}}
 .mapa-filtros{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center;}
 .mapa-filtros select{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-family:'Roboto',sans-serif;font-size:0.75rem;max-width:100%;}
+.mapa-filtros input[type=checkbox]{accent-color:var(--accent);}
+.mapa-dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+.mapa-ck{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;margin:0;}
+.mapa-menu-ft{display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-top:1px solid var(--border);padding:8px 10px;font-size:0.72rem;color:var(--muted);}
+.mapa-menu-ft b{color:var(--text);}
 .mapa-filtros label{font-size:0.72rem;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;}
 .mapa-panel-box{position:sticky;top:150px;max-height:calc(100vh - 170px);overflow:auto;}
 @media(max-width:900px){.mapa-panel-box{position:static;max-height:none;}}
@@ -463,6 +468,8 @@ tr.sup-group-sum td{
         <div id="mapa-wrap" style="display:none">
           <div class="mapa-filtros">
             <select id="mapa-color" onchange="mapaSetColor(this.value)"><option value="ruta">Color: ruta / supervisor</option><option value="compra">Color: compra en el mes</option></select>
+            <label><input type="checkbox" id="mapa-con" checked onchange="mapaSetCompra()"><i class="mapa-dot" style="background:#00d4aa"></i>Con compra</label>
+            <label><input type="checkbox" id="mapa-sin" checked onchange="mapaSetCompra()"><i class="mapa-dot" style="background:#ff4545"></i>Sin compra</label>
             <label><input type="checkbox" id="mapa-zonas" checked onchange="mapaDibujarZonas()"> Zonas guardadas</label>
           </div>
           <div class="mapa-split">
@@ -2732,7 +2739,7 @@ autoLoadFromServer();
 // Las zonas se dibujan con Leaflet-Geoman y se guardan por ruta con la contraseña del panel admin.
 const MAPA_PAL = ['#4fc3f7','#ff9f43','#66bb6a','#e040fb','#ffcc00','#ff5c8a','#00d4aa','#9575cd','#ff7043','#26c6da','#d4e157','#f06292','#8d6e63','#42a5f5','#ffa726','#ab47bc'];
 const mapa = { init: false, cargando: false, map: null, pts: null, zonasLayer: null, edit: null, data: null, zonas: {},
-  vend: '', ruta: '', color: 'ruta', dirty: false, menuOpen: true, supOpen: new Set(), vendExp: '', dibujando: false, clientesPorRuta: {}, markers: {} };
+  vend: '', ruta: '', color: 'ruta', dirty: false, menuOpen: true, supOpen: new Set(), vendExp: '', multi: new Set(), multiCol: {}, verCon: true, verSin: true, dibujando: false, clientesPorRuta: {}, markers: {} };
 
 async function mapaFetch(url) {
   try { const r = await fetch(url, { cache: 'no-store' }); if (r.ok) return await r.json(); return null; }
@@ -2746,6 +2753,7 @@ function mapaVendNombre(cod) {
   return (api && api.nombre) || ('Vendedor ' + cod);
 }
 function mapaRutaColor(ruta) {
+  if (mapa.multiCol && mapa.multiCol[ruta]) return mapa.multiCol[ruta];
   const rs = mapaRutasDe(mapa.data.rutas[ruta] ? mapa.data.rutas[ruta].vendedor : '');
   const i = rs.indexOf(String(ruta));
   return MAPA_PAL[(i >= 0 ? i : Math.abs(String(ruta).split('').reduce((s, c) => s * 31 + c.charCodeAt(0), 7))) % MAPA_PAL.length];
@@ -2832,16 +2840,39 @@ function renderMapa(ajustar) {
   if (!mapa.init) return;
   const vends = mapaVendedores();
   if (mapa.vend && !vends.includes(mapa.vend)) { mapa.vend = ''; mapa.ruta = ''; mapaCargarEdicion(); }
+  const vset = new Set(vends);
+  [...mapa.multi].forEach(r => { const x = mapa.data.rutas[r]; if (!x || !vset.has(String(x.vendedor))) mapa.multi.delete(r); });
+  mapa.multiCol = {};
+  (mapaRutasVista() || []).forEach((r, i) => { mapa.multiCol[r] = MAPA_PAL[i % MAPA_PAL.length]; });
   document.getElementById('mapa-color').value = mapa.color;
   mapaDibujarPuntos(ajustar);
   mapaDibujarZonas();
   mapaPanel();
 }
 
+// Rutas tildadas en el menú (+ la ruta elegida para editar). null si no hay ninguna tildada.
+function mapaRutasVista() {
+  if (!mapa.multi.size) return null;
+  const rs = [...mapa.multi];
+  if (mapa.ruta && !mapa.multi.has(mapa.ruta)) rs.unshift(mapa.ruta);
+  return rs;
+}
+function mapaPasaCompra(c) { return c.f > 0 ? mapa.verCon : mapa.verSin; }
+function mapaSetCompra() {
+  mapa.verCon = document.getElementById('mapa-con').checked;
+  mapa.verSin = document.getElementById('mapa-sin').checked;
+  mapaDibujarPuntos(false); mapaPanel();
+}
 function mapaVisibles() {
-  // Clientes a mostrar según filtros: ruta > vendedor > supervisor.
+  // Clientes a mostrar según filtros: rutas tildadas > ruta > vendedor > supervisor.
   const vendsOk = new Set(mapaVendedores());
   const rutasOk = r => { const x = mapa.data.rutas[r]; return x && vendsOk.has(String(x.vendedor)); };
+  const vista = mapaRutasVista();
+  if (vista) {
+    const vistos = new Set(), foco = [];
+    vista.forEach(r => (mapa.clientesPorRuta[r] || []).forEach(c => { if (!vistos.has(c.id)) { vistos.add(c.id); foco.push(c); } }));
+    return { foco, resto: [] };
+  }
   if (mapa.ruta) return { foco: mapa.clientesPorRuta[mapa.ruta] || [], resto: mapa.vend ? mapaRutasDe(mapa.vend).filter(r => r !== mapa.ruta).flatMap(r => mapa.clientesPorRuta[r] || []) : [] };
   if (mapa.vend) return { foco: mapaRutasDe(mapa.vend).flatMap(r => mapa.clientesPorRuta[r] || []), resto: [] };
   // Vista general: los clientes activos sin ruta vigente van en gris (solo con "Todos" los supervisores).
@@ -2852,13 +2883,14 @@ function mapaRutaVisible(c) {
   // La ruta con la que se pinta un cliente: la elegida, o la primera del vendedor elegido, o la primera visible.
   const rs = c.r || [];
   if (mapa.ruta && rs.includes(mapa.ruta)) return mapa.ruta;
+  if (mapa.multi.size) { const r = rs.find(r => mapa.multi.has(r)); if (r) return r; }
   if (mapa.vend) { const r = rs.find(r => mapa.data.rutas[r] && String(mapa.data.rutas[r].vendedor) === mapa.vend); if (r) return r; }
   return rs.find(r => mapa.data.rutas[r] && (cur === 'TODOS' || mapaSup(mapa.data.rutas[r].vendedor) === cur)) || rs[0];
 }
 function mapaColorCliente(c) {
   if (mapa.color === 'compra') return c.f > 0 ? '#00d4aa' : '#ff4545';
   const r = mapaRutaVisible(c);
-  if (!mapa.vend) return sc(mapaSup(mapa.data.rutas[r] ? mapa.data.rutas[r].vendedor : ''));
+  if (!mapa.vend && !mapa.multi.size) return sc(mapaSup(mapa.data.rutas[r] ? mapa.data.rutas[r].vendedor : ''));
   return mapaRutaColor(r);
 }
 function mapaPopup(c) {
@@ -2875,21 +2907,25 @@ function mapaDibujarPuntos(ajustar) {
   const { foco, resto } = mapaVisibles();
   const vistos = new Set();
   resto.forEach(c => {
-    if (c.lat == null || vistos.has(c.id)) return; vistos.add(c.id);
+    if (c.lat == null || vistos.has(c.id) || !mapaPasaCompra(c)) return; vistos.add(c.id);
     L.circleMarker([c.lat, c.lng], { radius: 4, color: '#555', weight: 1, fillColor: '#888', fillOpacity: 0.35 })
       .bindPopup(() => mapaPopup(c)).addTo(mapa.pts);
   });
   const bounds = [];
   foco.forEach(c => {
     if (c.lat == null) return;
+    bounds.push([c.lat, c.lng]);   // el encuadre no cambia al filtrar por compra
+    if (!mapaPasaCompra(c)) return;
     const col = mapaColorCliente(c);
     const m = L.circleMarker([c.lat, c.lng], { radius: mapa.ruta ? 6 : 5, color: '#0a0c10', weight: 1, fillColor: col, fillOpacity: 0.9 })
       .bindPopup(() => mapaPopup(c)).addTo(mapa.pts);
-    mapa.markers[c.id] = m; bounds.push([c.lat, c.lng]);
+    mapa.markers[c.id] = m;
   });
   if (ajustar) {
-    const z = mapa.ruta && mapa.zonas[mapa.ruta] ? L.geoJSON(mapa.zonas[mapa.ruta].geometry).getBounds() : null;
-    if (z && z.isValid()) bounds.push(z.getSouthWest(), z.getNorthEast());
+    (mapaRutasVista() || (mapa.ruta ? [mapa.ruta] : [])).forEach(r => {
+      const z = mapa.zonas[r] ? L.geoJSON(mapa.zonas[r].geometry).getBounds() : null;
+      if (z && z.isValid()) bounds.push(z.getSouthWest(), z.getNorthEast());
+    });
     if (bounds.length) mapa.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
   }
 }
@@ -2897,12 +2933,14 @@ function mapaDibujarZonas() {
   mapa.zonasLayer.clearLayers();
   if (!document.getElementById('mapa-zonas').checked) return;
   const vendsOk = new Set(mapaVendedores());
+  const vista = mapaRutasVista();
   Object.entries(mapa.zonas).forEach(([r, z]) => {
     if (r === mapa.ruta) return; // la de la ruta elegida va en la capa de edición
     const x = mapa.data.rutas[r];
     if (!x || !vendsOk.has(String(x.vendedor))) return;
-    if (mapa.vend && String(x.vendedor) !== mapa.vend) return;
-    const col = mapa.vend ? mapaRutaColor(r) : sc(mapaSup(x.vendedor));
+    if (vista) { if (!vista.includes(r)) return; }
+    else if (mapa.vend && String(x.vendedor) !== mapa.vend) return;
+    const col = mapa.vend || vista ? mapaRutaColor(r) : sc(mapaSup(x.vendedor));
     L.geoJSON(z.geometry, { style: { color: col, weight: 2, fillColor: col, fillOpacity: mapa.ruta ? 0.05 : 0.12, opacity: mapa.ruta ? 0.5 : 0.9 }, interactive: true })
       .bindTooltip(`${mapaEsc(mapaRutaTxt(r))}<br>${mapaEsc(mapaVendNombre(x.vendedor))}`, { sticky: true })
       .on('click', () => mapaSel(String(x.vendedor), r))
@@ -2993,18 +3031,32 @@ function mapaConfirmarDescartar() {
 // Selección desde el menú (supervisor → vendedor → ruta). Al elegir una ruta el menú se contrae.
 function mapaSel(v, r) {
   v = v || ''; r = r || '';
+  if (!v && !r && mapa.multi.size && !mapa.vend) { mapa.multi.clear(); mapa.menuOpen = false; renderMapa(true); return; }
   if (v === mapa.vend && r === mapa.ruta) {   // clic en el vendedor ya elegido: abre/cierra sus rutas
     if (!r) { mapa.vendExp = mapa.vendExp === v ? '' : v; mapaPanel(); }
     return;
   }
   if (!mapaConfirmarDescartar()) return;
   mapa.vend = v; mapa.ruta = r; mapa.vendExp = v;
+  if (!v) mapa.multi.clear();
   if (v) mapa.supOpen.add(mapaSup(v));
   if (r || !v) mapa.menuOpen = false;
   mapaCargarEdicion(); renderMapa(true);
 }
 function mapaSetVend(v) { mapaSel(v, ''); }
 function mapaSetRuta(r) { mapaSel(mapa.vend, r); }
+// Tildes: ver varias rutas a la vez (de uno o varios vendedores). El menú queda abierto.
+function mapaTick(r) {
+  mapa.multi.has(r) ? mapa.multi.delete(r) : mapa.multi.add(r);
+  renderMapa(true);
+}
+function mapaTickVend(v) {
+  const rs = mapaRutasDe(v), todas = rs.length && rs.every(r => mapa.multi.has(r));
+  rs.forEach(r => todas ? mapa.multi.delete(r) : mapa.multi.add(r));
+  if (!todas) mapa.vendExp = v;
+  renderMapa(true);
+}
+function mapaLimpiarTildes() { mapa.multi.clear(); renderMapa(true); }
 function mapaMenuToggle() { mapa.menuOpen = !mapa.menuOpen; mapaPanel(); }
 function mapaToggleSup(s) { mapa.supOpen.has(s) ? mapa.supOpen.delete(s) : mapa.supOpen.add(s); mapaPanel(); }
 function mapaZonaEstado(r) {
@@ -3019,12 +3071,13 @@ function mapaMenu() {
   const grupos = {};
   vends.forEach(c => { const s = mapaSup(c); (grupos[s] = grupos[s] || []).push(c); });
   const sups = SUPS.filter(s => grupos[s] && grupos[s].length);
-  const crumb = !mapa.vend ? 'Todos los clientes'
+  let crumb = !mapa.vend ? 'Todos los clientes'
     : `<span style="color:${sc(mapaSup(mapa.vend))}">${mapaEsc(SL[mapaSup(mapa.vend)] || mapaSup(mapa.vend))}</span> › ${mapaEsc(mapaVendNombre(mapa.vend))}` +
       (mapa.ruta ? ` › <b>${mapaEsc(mapaRutaTxt(mapa.ruta))}</b>` : '');
+  if (mapa.multi.size) crumb = (mapa.ruta ? crumb + ' · ' : '') + `<b>${mapa.multi.size}</b> ruta${mapa.multi.size > 1 ? 's' : ''} tildada${mapa.multi.size > 1 ? 's' : ''}`;
   let body = '';
   if (mapa.menuOpen) {
-    body = `<div class="mapa-menu-bd"><div class="mapa-mi all${!mapa.vend ? ' sel' : ''}" onclick="mapaSel('','')">👥 Todos los clientes</div>` +
+    body = `<div class="mapa-menu-bd"><div class="mapa-mi all${!mapa.vend && !mapa.multi.size ? ' sel' : ''}" onclick="mapaSel('','')">👥 Todos los clientes</div>` +
       sups.map(sup => {
         const open = sups.length === 1 || mapa.supOpen.has(sup);
         const vs = grupos[sup];
@@ -3032,13 +3085,17 @@ function mapaMenu() {
           (!open ? '' : vs.map(v => {
             const rs = mapaRutasDe(v), exp = mapa.vendExp === v;
             const conZona = rs.filter(r => mapa.zonas[r]).length;
-            return `<div class="mapa-mi vend${v === mapa.vend && !mapa.ruta ? ' sel' : ''}" onclick="mapaSel('${mapaEsc(v)}','')"><span class="mapa-car">${exp ? '▾' : '▸'}</span><span class="mapa-mi-n"><span class="mapa-cod">${mapaEsc(v)}</span>${mapaEsc(mapaVendNombre(v))}</span><span class="mapa-mi-c" title="Rutas con zona / rutas">${conZona}/${rs.length}</span></div>` +
+            const nTick = rs.filter(r => mapa.multi.has(r)).length;
+            return `<div class="mapa-mi vend${v === mapa.vend && !mapa.ruta ? ' sel' : ''}" onclick="mapaSel('${mapaEsc(v)}','')"><span class="mapa-car">${exp ? '▾' : '▸'}</span><input type="checkbox" class="mapa-ck" title="Tildar todas sus rutas"${rs.length && nTick === rs.length ? ' checked' : ''}${nTick && nTick < rs.length ? ' data-ind="1"' : ''}${rs.length ? '' : ' disabled'} onclick="event.stopPropagation();mapaTickVend('${mapaEsc(v)}')"><span class="mapa-mi-n"><span class="mapa-cod">${mapaEsc(v)}</span>${mapaEsc(mapaVendNombre(v))}</span><span class="mapa-mi-c" title="Rutas con zona / rutas">${conZona}/${rs.length}</span></div>` +
               (!exp ? '' : rs.map(r => {
                 const e = mapaZonaEstado(r);
-                return `<div class="mapa-mi ruta${r === mapa.ruta ? ' sel' : ''}" onclick="event.stopPropagation();mapaSel('${mapaEsc(v)}','${mapaEsc(r)}')"><i style="background:${mapaRutaColor(r)}"></i><span class="mapa-mi-n">${mapaEsc(mapaRutaTxt(r))}<span class="mapa-sub">${(mapa.clientesPorRuta[r] || []).length} clientes${mapa.data.rutas[r].dias ? ' · días ' + mapaEsc(mapa.data.rutas[r].dias) : ''}</span></span><span class="mapa-mi-c" style="color:${e.col}" title="${mapaEsc(e.tip)}">${e.txt}</span></div>`;
+                return `<div class="mapa-mi ruta${r === mapa.ruta ? ' sel' : ''}" onclick="event.stopPropagation();mapaSel('${mapaEsc(v)}','${mapaEsc(r)}')" title="Clic en el nombre: elegir para dibujar la zona · Tilde: ver junto con otras"><input type="checkbox" class="mapa-ck"${mapa.multi.has(r) ? ' checked' : ''} onclick="event.stopPropagation();mapaTick('${mapaEsc(r)}')"><i style="background:${mapaRutaColor(r)}"></i><span class="mapa-mi-n">${mapaEsc(mapaRutaTxt(r))}<span class="mapa-sub">${(mapa.clientesPorRuta[r] || []).length} clientes${mapa.data.rutas[r].dias ? ' · días ' + mapaEsc(mapa.data.rutas[r].dias) : ''}</span></span><span class="mapa-mi-c" style="color:${e.col}" title="${mapaEsc(e.tip)}">${e.txt}</span></div>`;
               }).join('') || (exp ? '<div class="mapa-hint" style="padding-left:34px">Sin rutas vigentes.</div>' : ''));
           }).join(''));
-      }).join('') + '</div>';
+      }).join('') + '</div>' +
+      `<div class="mapa-menu-ft">${mapa.multi.size
+        ? `<span style="flex:1"><b>${mapa.multi.size}</b> ruta${mapa.multi.size > 1 ? 's' : ''} tildada${mapa.multi.size > 1 ? 's' : ''}</span><button class="mapa-btn" onclick="mapaLimpiarTildes()">Quitar tildes</button><button class="mapa-btn ok" onclick="mapaMenuToggle()">Ver en el mapa</button>`
+        : '<span>Tildá rutas para ver varias juntas · clic en el nombre para dibujar su zona</span>'}</div>`;
   }
   return `<div class="mapa-menu${mapa.menuOpen ? ' open' : ''}"><button class="mapa-menu-hd" onclick="mapaMenuToggle()" title="${mapa.menuOpen ? 'Contraer' : 'Elegir supervisor, vendedor y ruta'}"><span>☰</span><span class="mapa-crumb">${crumb}</span><span class="mapa-car">${mapa.menuOpen ? '▴' : '▾'}</span></button>${body}</div>`;
 }
@@ -3053,6 +3110,7 @@ function mapaIr(id) {
 }
 
 // ---- Panel lateral ----
+function mapaMarcarIndet(el) { el.querySelectorAll('input[data-ind]').forEach(i => { i.indeterminate = true; }); }
 function mapaPanel() {
   const el = document.getElementById('mapa-panel');
   if (!mapa.init) return;
@@ -3061,16 +3119,34 @@ function mapaPanel() {
   const leyendaCompra = mapa.color === 'compra'
     ? `<div class="mapa-ley"><span><i style="background:#00d4aa"></i>Compró en el mes</span><span><i style="background:#ff4545"></i>Sin compra</span></div>` : '';
   const menu = mapaMenu();
+  // Resumen con / sin compra de lo que se está viendo (antes del filtro de tildes de compra)
+  const visAll = (() => { const v = mapaVisibles(); return v.foco.concat(v.resto); })();
+  const nCon = visAll.filter(c => c.f > 0).length;
+  const filtroTxt = !mapa.verCon && !mapa.verSin ? ' · <span style="color:var(--warn)">ningún filtro de compra tildado</span>'
+    : !mapa.verCon ? ' · mostrando solo sin compra' : !mapa.verSin ? ' · mostrando solo con compra' : '';
+  const compraRes = `<div class="mapa-res"><i class="mapa-dot" style="background:#00d4aa"></i> <b>${nCon}</b> con compra · <i class="mapa-dot" style="background:#ff4545"></i> <b>${visAll.length - nCon}</b> sin compra${filtroTxt}</div>`;
+  const vista = mapaRutasVista();
+  if (vista && !mapa.ruta) {
+    const items = vista.map(r => {
+      const x = mapa.data.rutas[r], e = mapaZonaEstado(r), cl = mapa.clientesPorRuta[r] || [];
+      return `<div class="mapa-mi ruta" style="padding-left:8px" onclick="mapaSel('${mapaEsc(x.vendedor)}','${mapaEsc(r)}')"><input type="checkbox" class="mapa-ck" checked onclick="event.stopPropagation();mapaTick('${mapaEsc(r)}')"><i style="background:${mapaRutaColor(r)}"></i><span class="mapa-mi-n">${mapaEsc(mapaRutaTxt(r))}<span class="mapa-sub">${mapaEsc(mapaVendNombre(x.vendedor))} · ${cl.length} clientes · ${cl.filter(c => c.f > 0).length} con compra</span></span><span class="mapa-mi-c" style="color:${e.col}" title="${mapaEsc(e.tip)}">${e.txt}</span></div>`;
+    }).join('');
+    el.innerHTML = menu + `<div class="mapa-res"><b>${vista.length}</b> rutas tildadas · <b>${visAll.length}</b> clientes</div>` + compraRes +
+      `<div class="mapa-rts">${items}</div><div class="mapa-tools"><button class="mapa-btn" onclick="mapaLimpiarTildes()">Quitar tildes</button></div><div class="mapa-hint">Clic en una ruta para dibujar o revisar su zona.</div>`;
+    mapaMarcarIndet(el);
+    return;
+  }
   if (!mapa.vend) {
     const vis = mapaVisibles().foco;
     const sups = cur === 'TODOS' ? SUPS.filter(s => s !== 'SIN SUPERVISOR') : [cur];
     const sinCoords = !mapa.data.clientes.some(c => c.lat != null)
       ? `<div class="mapa-hint" style="color:var(--warn)">Ningún cliente vino con coordenadas desde Chess. Revisar salida/clientes_muestra.json en la carpeta de chess_sync.</div>` : '';
     const sinRuta = cur === 'TODOS' ? mapa.data.clientes.filter(c => !(c.r || []).length) : [];
-    el.innerHTML = menu + `<div class="mapa-res"><b>${nGeo(vis)}</b> clientes de rutas en el mapa · ${nCli(vis) - nGeo(vis)} sin ubicación</div>` +
+    el.innerHTML = menu + compraRes + `<div class="mapa-res"><b>${nGeo(vis)}</b> clientes de rutas en el mapa · ${nCli(vis) - nGeo(vis)} sin ubicación</div>` +
       (sinRuta.length ? `<div class="mapa-res"><b>${nGeo(sinRuta)}</b> clientes sin ruta (en gris)</div>` : '') + sinCoords +
       (mapa.color === 'compra' ? leyendaCompra : `<div class="mapa-ley">${sups.map(s => `<span><i style="background:${sc(s)}"></i>${SL[s] || s}</span>`).join('')}</div>`) +
       (mapa.menuOpen ? '' : empty('Abrí el menú ☰ para elegir supervisor, vendedor y ruta.'));
+    mapaMarcarIndet(el);
     return;
   }
   const rutas = mapaRutasDe(mapa.vend);
@@ -3102,8 +3178,10 @@ function mapaPanel() {
   }
   const cliVend = new Set(rutas.flatMap(r => (mapa.clientesPorRuta[r] || []).map(c => c.id)));
   const resumen = `<div class="mapa-res">${mapaEsc(mapaVendNombre(mapa.vend))} · <b>${rutas.length}</b> rutas · <b>${cliVend.size}</b> clientes · ${rutas.filter(r => mapa.zonas[r]).length} con zona</div>`;
-  el.innerHTML = menu + (mapa.ruta ? '' : resumen) + leyendaCompra +
+  const otras = vista ? `<div class="mapa-hint">También se ven ${vista.length - 1} ruta${vista.length - 1 === 1 ? '' : 's'} tildada${vista.length - 1 === 1 ? '' : 's'}. <a href="#" style="color:var(--accent)" onclick="event.preventDefault();mapaLimpiarTildes()">Quitar tildes</a></div>` : '';
+  el.innerHTML = menu + (mapa.ruta ? '' : resumen) + compraRes + otras + leyendaCompra +
     (det || (mapa.menuOpen ? '' : empty('Elegí una ruta en el menú ☰ para dibujar o revisar su zona.')));
+  mapaMarcarIndet(el);
 }
 window.addEventListener('beforeunload', e => { if (mapa.dirty) { e.preventDefault(); e.returnValue = ''; } });
 </script>
