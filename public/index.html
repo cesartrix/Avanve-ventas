@@ -145,6 +145,7 @@ tr.sup-group-hdr.cob-click.sel td,tr.sup-group-sum.cob-click.sel td{background:r
 .sbtn[data-s="MARTIN"].active{background:#7b61ff;}
 .sbtn[data-s="CRISTIAN"].active{background:#ff6b35;}
 .sbtn[data-s="GONZALO"].active{background:#ffcc00;}
+.sbtn[data-s="GONZALO ESPECIFICOS"].active{background:#40c4ff;}
 .sbtn[data-s="MAXI"].active{background:#e040fb;}
 
 .stabs{background:var(--surface);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;gap:4px;overflow-x:auto;position:sticky;top:97px;z-index:190;}
@@ -207,7 +208,7 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'Roboto Mono',monospace;
 .hst-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;}
 .hst-title{font-family:'Roboto',sans-serif;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:14px;}
 .hst-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:0.68rem;}
-.hst-bar-label{width:55px;color:var(--muted);text-align:right;flex-shrink:0;font-family:'Roboto Mono',monospace;}
+.hst-bar-label{width:135px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);text-align:right;flex-shrink:0;font-family:'Roboto Mono',monospace;}
 .hst-bar-wrap{flex:1;height:14px;background:var(--bg);border-radius:4px;overflow:hidden;}
 .hst-bar-fill{height:100%;border-radius:4px;transition:width 0.6s ease;}
 .hst-bar-val{width:42px;color:var(--text);font-family:'Roboto Mono',monospace;flex-shrink:0;}
@@ -364,7 +365,8 @@ tr.sup-group-sum td{
     <button class="sbtn" data-s="MARTIN PREVENTA" onclick="setSup('MARTIN PREVENTA',this)">🟢 Martín Preventa</button>
     <button class="sbtn" data-s="MARTIN" onclick="setSup('MARTIN',this)">🟣 Martín</button>
     <button class="sbtn" data-s="CRISTIAN" onclick="setSup('CRISTIAN',this)">🟠 Cristian</button>
-    <button class="sbtn" data-s="GONZALO" onclick="setSup('GONZALO',this)">🟡 Gonzalo</button>
+    <button class="sbtn" data-s="GONZALO" onclick="setSup('GONZALO',this)">🟡 Gonzalo Preventa</button>
+    <button class="sbtn" data-s="GONZALO ESPECIFICOS" onclick="setSup('GONZALO ESPECIFICOS',this)">🔵 Gonzalo Específicos</button>
     <button class="sbtn" data-s="MAXI" onclick="setSup('MAXI',this)">🟣 Maxi</button>
   </div>
   <div class="stabs">
@@ -517,17 +519,26 @@ tr.sup-group-sum td{
 // Mapeamos palabras clave del nombre del supervisor a la etiqueta interna
 const SUP_KEY_MAP = [
   { key: 'MARTIN PREVENTA', label: 'MARTIN PREVENTA' },
+  { key: 'GONZALO ESPEC',   label: 'GONZALO ESPECIFICOS' },
+  { key: 'ESPECIFICOS',     label: 'GONZALO ESPECIFICOS' },
+  { key: 'GONZALO',         label: 'GONZALO' },            // "Gonzalo Preventa" (antes de PREVENTA)
   { key: 'PREVENTA',        label: 'MARTIN PREVENTA' },
   { key: 'MARTIN',          label: 'MARTIN' },
   { key: 'CRISTIAN',        label: 'CRISTIAN' },
-  { key: 'GONZALO',          label: 'GONZALO' },
   { key: 'MAXI',             label: 'MAXI' },
 ];
+// Vendedores de Gonzalo que van en la agrupación "Gonzalo Específicos" (el resto queda en "Gonzalo Preventa").
+// Se aplica solo si en los objetivos del mes figuran con supervisor GONZALO.
+const GONZALO_ESPECIFICOS = new Set(['40', '7', '32', '57']);
+function supVendedor(cod, sup) {
+  if (sup === 'GONZALO' && GONZALO_ESPECIFICOS.has(String(cod))) return 'GONZALO ESPECIFICOS';
+  return sup;
+}
 // Códigos de vendedores SIN supervisor conocido
 const NO_SUP_CODES = new Set([]);
 
-const SC = {'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','GONZALO':'#ffcc00','MAXI':'#e040fb','SIN SUPERVISOR':'#5a6072'};
-const SL = {'MARTIN PREVENTA':'Martín Preventa','MARTIN':'Martín','CRISTIAN':'Cristian','GONZALO':'Gonzalo','MAXI':'Maxi','SIN SUPERVISOR':'Sin sup.'};
+const SC = {'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','GONZALO':'#ffcc00','GONZALO ESPECIFICOS':'#40c4ff','MAXI':'#e040fb','SIN SUPERVISOR':'#5a6072'};
+const SL = {'MARTIN PREVENTA':'Martín Preventa','MARTIN':'Martín','CRISTIAN':'Cristian','GONZALO':'Gonzalo Preventa','GONZALO ESPECIFICOS':'Gonzalo Específicos','MAXI':'Maxi','SIN SUPERVISOR':'Sin sup.'};
 const SUPS = Object.keys(SC);
 
 let A=[], COB=[], cur='TODOS', CH={}, skuSelectedCod=null, cobSel=null, entSel=null;
@@ -679,7 +690,7 @@ function buildData() {
     if (A.some(x => x.codigo === cod)) return;
     A.push({
       nombre: nombreApi(cod) || String(v.nombre || '').trim(), codigo: cod,
-      supervisor: NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : (normSup(v.supervisor) || 'SIN SUPERVISOR'),
+      supervisor: NO_SUP_CODES.has(cod) ? 'SIN SUPERVISOR' : (supVendedor(cod, normSup(v.supervisor)) || 'SIN SUPERVISOR'),
       objetivo: Math.round(+v.objetivo || 0),
       facturacion: 0, facturacion_dia: 0, avance_pct: 0, proyeccion: 0, cumplimiento: 0,
       media_real: 0, media_nec: 0, cobro: 0, cantidad_sku: null, dia_visita: null,
@@ -1649,7 +1660,8 @@ ${document.querySelector('style').textContent}
   <button class="sbtn" data-s="MARTIN PREVENTA" onclick="setSup('MARTIN PREVENTA',this)">🟢 Martín Preventa</button>
   <button class="sbtn" data-s="MARTIN" onclick="setSup('MARTIN',this)">🟣 Martín</button>
   <button class="sbtn" data-s="CRISTIAN" onclick="setSup('CRISTIAN',this)">🟠 Cristian</button>
-  <button class="sbtn" data-s="GONZALO" onclick="setSup('GONZALO',this)">🟡 Gonzalo</button>
+  <button class="sbtn" data-s="GONZALO" onclick="setSup('GONZALO',this)">🟡 Gonzalo Preventa</button>
+    <button class="sbtn" data-s="GONZALO ESPECIFICOS" onclick="setSup('GONZALO ESPECIFICOS',this)">🔵 Gonzalo Específicos</button>
     <button class="sbtn" data-s="MAXI" onclick="setSup('MAXI',this)">🟣 Maxi</button>
 </div>
 <div class="stabs">
@@ -1706,8 +1718,8 @@ ${document.querySelector('style').textContent}
 <script>
 const A=${JSON.stringify(A)};
 const COB=${JSON.stringify(COB)};
-const SC={'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','GONZALO':'#ffcc00','MAXI':'#e040fb','SIN SUPERVISOR':'#5a6072'};
-const SL={'MARTIN PREVENTA':'Martín Preventa','MARTIN':'Martín','CRISTIAN':'Cristian','GONZALO':'Gonzalo','MAXI':'Maxi','SIN SUPERVISOR':'Sin sup.'};
+const SC={'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','GONZALO':'#ffcc00','GONZALO ESPECIFICOS':'#40c4ff','MAXI':'#e040fb','SIN SUPERVISOR':'#5a6072'};
+const SL={'MARTIN PREVENTA':'Martín Preventa','MARTIN':'Martín','CRISTIAN':'Cristian','GONZALO':'Gonzalo Preventa','GONZALO ESPECIFICOS':'Gonzalo Específicos','MAXI':'Maxi','SIN SUPERVISOR':'Sin sup.'};
 const SUPS=Object.keys(SC);
 let cur='TODOS',CH={};
 const fmt=v=>'$'+Math.round(v).toLocaleString('es-AR');
@@ -1873,7 +1885,7 @@ function renderHist(idx, btn) {
   });
 
   // Supervisor summary bars (avance)
-  const supNames = Object.keys(sups).filter(s=>s!=='SIN SUPERVISOR');
+  const supNames = Object.keys(sups).filter(s=>s!=='SIN SUPERVISOR').sort((a,b)=>SUPS.indexOf(a)-SUPS.indexOf(b));
   const supBars = supNames.map(s => {
     const g = sups[s];
     const gObj = g.reduce((a,x)=>a+x.objetivo,0);
@@ -1921,7 +1933,7 @@ function renderHist(idx, btn) {
       <div class="hst-title">Por supervisor</div>
       ${supBars.map(s=>`
         <div class="hst-bar-row">
-          <div class="hst-bar-label">${s.sup.split(' ')[0]}</div>
+          <div class="hst-bar-label">${sl(s.sup)}</div>
           <div class="hst-bar-wrap"><div class="hst-bar-fill" style="width:${Math.min(s.cumpl/maxCumpl*100,100)}%;background:${gc(s.cumpl)}"></div></div>
           <div class="hst-bar-val" style="color:${gc(s.cumpl)}">${s.cumpl}%</div>
         </div>`).join('')}
@@ -1945,7 +1957,7 @@ function renderHist(idx, btn) {
       <div class="hst-title">Por supervisor</div>
       ${supBarsCov.map(s=>`
         <div class="hst-bar-row">
-          <div class="hst-bar-label">${s.sup.split(' ')[0]}</div>
+          <div class="hst-bar-label">${sl(s.sup)}</div>
           <div class="hst-bar-wrap"><div class="hst-bar-fill" style="width:${Math.min(s.cumpl/maxCumplCov*100,100)}%;background:${gcCov(s.cumpl)}"></div></div>
           <div class="hst-bar-val" style="color:${gcCov(s.cumpl)}">${s.cumpl}%</div>
         </div>`).join('')}
@@ -1955,7 +1967,7 @@ function renderHist(idx, btn) {
       <table class="hst-tbl">
         <thead><tr><th>Vendedor</th><th>Objetivo</th><th>Facturado</th><th>Cumpl.</th><th>Cobertura</th><th>SKU</th></tr></thead>
         <tbody>
-          ${Object.keys(sups).filter(s=>s!=='SIN SUPERVISOR').map(s => {
+          ${Object.keys(sups).filter(s=>s!=='SIN SUPERVISOR').sort((a,b)=>SUPS.indexOf(a)-SUPS.indexOf(b)).map(s => {
             const g = sups[s].sort((a,b)=>b.cumplimiento-a.cumplimiento);
             const gObj = g.reduce((a,x)=>a+x.objetivo,0);
             const gProy = g.reduce((a,x)=>a+x.proyeccion,0);
@@ -1968,7 +1980,7 @@ function renderHist(idx, btn) {
             const gCovHtml = gCovPct==null ? '—' : '<div style="line-height:1.15">'+gCovPct.toFixed(1)+'%<div style="font-size:0.58rem;color:var(--muted);font-weight:400">'+gCcc.toLocaleString('es-AR')+' / '+gCar.toLocaleString('es-AR')+'</div></div>';
             const _sg = skuGrupoHist(h, g);
             const gSku = _sg.v;
-            return '<tr class="hst-sup-row" data-sup="'+s.replace(/"/g,'')+'" title="Ver evolución mensual del supervisor" style="background:var(--border)"><td style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">📈 '+s+'</td><td style="color:var(--text);font-weight:800">'+fmtM(gObj)+'</td><td style="color:var(--text);font-weight:800">'+fmtM(gFac)+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td><td style="color:'+(gCovPct==null?'var(--muted)':gcCov(gCovPct))+';font-weight:800" title="CCC / Cartera del grupo">'+gCovHtml+'</td><td style="color:var(--text);font-weight:800">'+(gSku!=null?(_sg.exacto?gSku:'<span title="Promedio por vendedor: este mes no tiene el detalle de artículos de la API">'+gSku+' <small style=\'color:var(--muted)\'>prom.</small></span>'):'—')+'</td></tr>'
+            return '<tr class="hst-sup-row" data-sup="'+s.replace(/"/g,'')+'" title="Ver evolución mensual del supervisor" style="background:var(--border)"><td style="color:var(--text);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">📈 '+sl(s)+'</td><td style="color:var(--text);font-weight:800">'+fmtM(gObj)+'</td><td style="color:var(--text);font-weight:800">'+fmtM(gFac)+'</td><td style="color:'+gc(+gCumpl)+';font-weight:800">'+gCumpl+'%</td><td style="color:'+(gCovPct==null?'var(--muted)':gcCov(gCovPct))+';font-weight:800" title="CCC / Cartera del grupo">'+gCovHtml+'</td><td style="color:var(--text);font-weight:800">'+(gSku!=null?(_sg.exacto?gSku:'<span title="Promedio por vendedor: este mes no tiene el detalle de artículos de la API">'+gSku+' <small style=\'color:var(--muted)\'>prom.</small></span>'):'—')+'</td></tr>'
               + g.map(x=>'<tr class="hst-vendor-row" data-cod="'+x.codigo+'" data-nom="'+(getCurName(x.codigo)||x.nombre).replace(/"/g,'')+'"><td style="color:var(--text);padding-left:10px"><span style=\'color:var(--muted);font-size:0.62rem;margin-right:4px\'>'+x.codigo+'</span>'+(getCurName(x.codigo)||x.nombre)+'</td><td>'+fmtM(x.objetivo)+'</td><td>'+fmtM(x.facturacion)+'</td><td style="color:'+gc(x.cumplimiento)+';font-weight:700">'+x.cumplimiento.toFixed(1)+'%</td><td style="color:'+(x.cobertura===null||x.cobertura===undefined?'var(--muted)':gcCov(x.cobertura))+';font-weight:700">'+(x.cobertura===null||x.cobertura===undefined?'—':x.cobertura.toFixed(1)+'%')+'</td><td style="color:var(--text)">'+(x.cantidad_sku!=null?x.cantidad_sku:'—')+'</td></tr>').join('');
           }).join('')}
         </tbody>
@@ -2197,7 +2209,7 @@ function buildHorasChart() {
   }
 
   const OBJETIVO = 6;
-  const SUP_COLORS = {'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','GONZALO':'#ffcc00','MAXI':'#e040fb'};
+  const SUP_COLORS = {'MARTIN PREVENTA':'#00d4aa','MARTIN':'#7b61ff','CRISTIAN':'#ff6b35','GONZALO':'#ffcc00','GONZALO ESPECIFICOS':'#40c4ff','MAXI':'#e040fb'};
   const gc2 = v => v >= OBJETIVO ? '#00d4aa' : v >= 5 ? '#ffcc00' : '#ff4545';
 
   // Group by supervisor
@@ -2208,9 +2220,9 @@ function buildHorasChart() {
     sups[x.supervisor].push(x);
   });
 
-  grid.innerHTML = Object.keys(sups).sort().map(sup =>
+  grid.innerHTML = Object.keys(sups).sort((a, b) => SUPS.indexOf(a) - SUPS.indexOf(b)).map(sup =>
     `<div class="horas-card">
-      <div class="horas-card-title" style="color:${SUP_COLORS[sup]||'var(--accent)'}">${sup}</div>
+      <div class="horas-card-title" style="color:${SUP_COLORS[sup]||'var(--accent)'}">${sl(sup).toUpperCase()}</div>
       <div class="horas-card-sub">Objetivo: 6h · ${sups[sup].length} vendedores</div>
       <div class="horas-chart-wrap"><canvas id="horas-chart-${sup.replace(/ /g,'_')}"></canvas></div>
     </div>`
@@ -2336,7 +2348,7 @@ function showSupHistChart(sup) {
     dataCov.push(gCov.length ? +(gCov.reduce((a,x)=>a+x.cobertura,0)/gCov.length).toFixed(1) : null);
     dataSku.push(skuGrupoHist(h, g).v);
   });
-  drawHistChart(`📈 ${sup} (supervisor)`, labels, dataCumpl, dataFact, dataCov, dataSku, true);
+  drawHistChart(`📈 ${sl(sup)} (supervisor)`, labels, dataCumpl, dataFact, dataCov, dataSku, true);
 }
 
 function drawHistChart(title, labels, dataCumpl, dataFact, dataCov, dataSku, isSup) {
@@ -2702,7 +2714,7 @@ function completarHistorico() {
       const cov = covBy[cod];
       return {
         codigo: cod, nombre: String(v.nombre || '').trim(),
-        supervisor: getCurSup(cod) || normSup(v.supervisor) || 'SIN SUPERVISOR',
+        supervisor: getCurSup(cod) || supVendedor(cod, normSup(v.supervisor)) || 'SIN SUPERVISOR',
         objetivo: obj, facturacion: fac, proyeccion: fac,              // mes cerrado: proyección = facturación final
         cumplimiento: obj > 0 ? fac / obj * 100 : 0,
         cobertura: cov ? +cov.cobertura : null, ccc: cov ? cov.ccc : null, cartera: cov ? cov.cartera : null,

@@ -214,7 +214,7 @@
   let adminPassword = '';
 
   // Supervisores que el tablero conoce (mismo criterio que normSup() del dashboard)
-  const SUP_CONOCIDOS = ['MARTIN PREVENTA', 'PREVENTA', 'MARTIN', 'CRISTIAN', 'GONZALO', 'MAXI'];
+  const SUP_CONOCIDOS = ['MARTIN PREVENTA', 'PREVENTA', 'MARTIN', 'CRISTIAN', 'GONZALO', 'ESPECIFICOS', 'MAXI'];
   const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const hoyAR = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }); // AAAA-MM-DD
   const mesTxt = mes => { const [y, m] = mes.split('-').map(Number); return `${MESES[m - 1]} ${y}`; };
