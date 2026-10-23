@@ -1,6 +1,6 @@
 {
  "2026-10": {
-  "subido": "2026-10-22T18:39:58.430Z",
+  "subido": "2026-10-23T17:09:15.024Z",
   "archivo": "Objetivos Octubre y horas.xlsx",
   "vendedores": [
    {
@@ -187,7 +187,7 @@
     "codigo": "7",
     "nombre": "VALLEJOS EDUARDO",
     "supervisor": "GONZALO",
-    "objetivo": 132678322.214375
+    "objetivo": 100000000
    },
    {
     "codigo": "57",
@@ -254,42 +254,42 @@
    {
     "codigo": "2",
     "nombre": "OJEDA NORBERTO",
-    "horas": 5.142
+    "horas": 5.0927
    },
    {
     "codigo": "3",
     "nombre": "VIDAL NAHUEL",
-    "horas": 6.763
+    "horas": 6.7537
    },
    {
     "codigo": "18",
     "nombre": "HERRERA PABLO",
-    "horas": 6.5013
+    "horas": 6.5087
    },
    {
     "codigo": "21",
     "nombre": "CATAN MATIAS",
-    "horas": 6.2925
+    "horas": 6.3241
    },
    {
     "codigo": "23",
     "nombre": "DELGADO JOSÉ",
-    "horas": 6.0625
+    "horas": 6.0764
    },
    {
     "codigo": "31",
     "nombre": "RENZO RAMOS",
-    "horas": 6.3721
+    "horas": 6.3831
    },
    {
     "codigo": "44",
     "nombre": "MONGES CESAR LUIS",
-    "horas": 6.1354
+    "horas": 6.1649
    },
    {
     "codigo": "54",
     "nombre": "BARTSCHAT EMILIANO NAHUEL",
-    "horas": 5.6676
+    "horas": 5.7649
    },
    {
     "codigo": "56",
@@ -299,122 +299,122 @@
    {
     "codigo": "4",
     "nombre": "TUR SPRINGER FERNANDO",
-    "horas": 6.5707
+    "horas": 6.5155
    },
    {
     "codigo": "5",
     "nombre": "SCHELOVER RAUL",
-    "horas": 7.1008
+    "horas": 7.077
    },
    {
     "codigo": "8",
     "nombre": "PARRA MAXIMILIANO",
-    "horas": 6.6261
+    "horas": 6.6462
    },
    {
     "codigo": "11",
     "nombre": "SANCHEZ RICARDO",
-    "horas": 6.7272
+    "horas": 6.7242
    },
    {
     "codigo": "12",
     "nombre": "GUTIERREZ MARCOS DAVID",
-    "horas": 5.895
+    "horas": 5.9119
    },
    {
     "codigo": "16",
     "nombre": "GOMEZ MATÍAS",
-    "horas": 6.0159
+    "horas": 6.0078
    },
    {
     "codigo": "19",
     "nombre": "GONZALEZ MARCELO",
-    "horas": 6.2482
+    "horas": 6.1952
    },
    {
     "codigo": "20",
     "nombre": "FLORES JAVIER",
-    "horas": 6.2526
+    "horas": 6.2321
    },
    {
     "codigo": "49",
     "nombre": "ESCOBAR RAÚL",
-    "horas": 6.1889
+    "horas": 6.1684
    },
    {
     "codigo": "1",
     "nombre": "VERA ERNESTO",
-    "horas": 6.6186
+    "horas": 6.5597
    },
    {
     "codigo": "9",
     "nombre": "ESTIGARRIBIA DAVID",
-    "horas": 5.4757
+    "horas": 5.4715
    },
    {
     "codigo": "10",
     "nombre": "BRITEZ EMMANUEL",
-    "horas": 5.6234
+    "horas": 5.6761
    },
    {
     "codigo": "24",
     "nombre": "AZULA NICOLAS",
-    "horas": 5.3608
+    "horas": 5.3412
    },
    {
     "codigo": "27",
     "nombre": "GOMEZ ADRIÁN",
-    "horas": 5.8934
+    "horas": 5.8514
    },
    {
     "codigo": "28",
     "nombre": "GOMEZ PABLO",
-    "horas": 5.0907
+    "horas": 5.0952
    },
    {
     "codigo": "33",
     "nombre": "ESQUIVEL NICOLAS",
-    "horas": 5.3506
+    "horas": 5.3695
    },
    {
     "codigo": "36",
     "nombre": "IBARROLA JORGE",
-    "horas": 5.7047
+    "horas": 5.8288
    },
    {
     "codigo": "37",
     "nombre": "SALAJ EMILIO",
-    "horas": 5.8775
+    "horas": 5.942
    },
    {
     "codigo": "40",
     "nombre": "SOLIS EMMANUEL",
-    "horas": 4.2051
+    "horas": 4.2989
    },
    {
     "codigo": "52",
     "nombre": "RAVAROTTO EMANUEL",
-    "horas": 4.3263
+    "horas": 4.2363
    },
    {
     "codigo": "53",
     "nombre": "SANDOVAL RODRIGO",
-    "horas": 5.1021
+    "horas": 5.0817
    },
    {
     "codigo": "15",
     "nombre": "GALARZA GERARDO",
-    "horas": 4.5449
+    "horas": 4.5288
    },
    {
     "codigo": "22",
     "nombre": "ALMIRON NICOLAS",
-    "horas": 4.6702
+    "horas": 4.6493
    },
    {
     "codigo": "7",
     "nombre": "VALLEJOS EDUARDO",
-    "horas": 3.3113
+    "horas": 3.1486
    },
    {
     "codigo": "32",
@@ -424,7 +424,7 @@
    {
     "codigo": "57",
     "nombre": "FEDERRATH MARTIN",
-    "horas": 3.7724
+    "horas": 3.8322
    }
   ],
   "subtotales": {
