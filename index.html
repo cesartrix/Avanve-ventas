@@ -28,6 +28,17 @@
 .mapa-menu-ft b{color:var(--text);}
 .mapa-filtros label{font-size:0.72rem;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;}
 .mapa-panel-box{position:sticky;top:150px;max-height:calc(100vh - 170px);overflow:auto;}
+.mapa-fs-btn{margin-left:auto;}
+/* Pantalla completa: mapa ocupando todo y el menú al costado */
+#mapa-wrap.mapa-full{position:fixed;inset:0;z-index:2000;background:var(--bg);padding:10px 12px;display:flex!important;flex-direction:column;}
+#mapa-wrap.mapa-full .mapa-filtros{margin-bottom:8px;flex-shrink:0;}
+#mapa-wrap.mapa-full .mapa-split{flex:1;min-height:0;grid-template-columns:minmax(0,1fr) 360px;align-items:stretch;}
+#mapa-wrap.mapa-full #mapa-map{height:100%;min-height:0;}
+#mapa-wrap.mapa-full .mapa-menu-bd{max-height:62vh;}
+#mapa-wrap.mapa-full .mapa-panel-box{position:static;max-height:none;height:100%;overflow:auto;padding-right:2px;}
+@media(max-width:900px){
+  #mapa-wrap.mapa-full .mapa-split{grid-template-columns:1fr;grid-template-rows:minmax(0,58fr) minmax(0,42fr);gap:8px;}
+}
 @media(max-width:900px){.mapa-panel-box{position:static;max-height:none;}}
 .mapa-res{font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted);margin-bottom:8px;}
 .mapa-res b{color:var(--text);}
@@ -473,6 +484,7 @@ tr.sup-group-sum td{
             <label><input type="checkbox" id="mapa-con" checked onchange="mapaSetCompra()"><i class="mapa-dot" style="background:#00d4aa"></i>Con compra</label>
             <label><input type="checkbox" id="mapa-sin" checked onchange="mapaSetCompra()"><i class="mapa-dot" style="background:#ff4545"></i>Sin compra</label>
             <label><input type="checkbox" id="mapa-zonas" checked onchange="mapaDibujarZonas()"> Zonas guardadas</label>
+            <button class="mapa-btn mapa-fs-btn" id="mapa-fs" onclick="mapaPantallaCompleta()" title="Pantalla completa (Esc para salir)">⛶ Pantalla completa</button>
           </div>
           <div class="mapa-split">
             <div id="mapa-map"></div>
@@ -984,7 +996,7 @@ function showErr(msg) {
 
 // ===== NAV =====
 function setSup(s,btn){cur=s;document.querySelectorAll('.sbtn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');refresh();}
-function showSec(id,btn){document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.stab').forEach(t=>t.classList.remove('active'));document.getElementById('pg-'+id).classList.add('active');btn.classList.add('active');if(id==='trazabilidad'&&!trazFechas.length)initTrazabilidad();if(id==='mapa')initMapa();}
+function showSec(id,btn){document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.stab').forEach(t=>t.classList.remove('active'));document.getElementById('pg-'+id).classList.add('active');btn.classList.add('active');if(id==='trazabilidad'&&!trazFechas.length)initTrazabilidad();if(id==='mapa')initMapa();else{const w=document.getElementById('mapa-wrap');if(w&&w.classList.contains('mapa-full'))mapaPantallaCompleta();}}
 
 // ===== CHARTS =====
 function dc(id){if(CH[id]){CH[id].destroy();delete CH[id];}}
@@ -3195,6 +3207,34 @@ function mapaPanel() {
     (det || (mapa.menuOpen ? '' : empty('Elegí una ruta en el menú ☰ para dibujar o revisar su zona.')));
   mapaMarcarIndet(el);
 }
+
+// ---- Pantalla completa (mapa + menú al costado) ----
+function mapaPantallaCompleta() {
+  const w = document.getElementById('mapa-wrap');
+  const on = !w.classList.contains('mapa-full');
+  if (on) {
+    w.classList.add('mapa-full');
+    try { if (w.requestFullscreen && !document.fullscreenElement) w.requestFullscreen().catch(() => {}); } catch (_) {}
+  } else {
+    w.classList.remove('mapa-full');
+    try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch (_) {}
+  }
+  mapaFsActualizar();
+}
+function mapaFsActualizar() {
+  const w = document.getElementById('mapa-wrap'), b = document.getElementById('mapa-fs');
+  const on = w.classList.contains('mapa-full');
+  b.textContent = on ? '✕ Salir de pantalla completa' : '⛶ Pantalla completa';
+  document.body.style.overflow = on ? 'hidden' : '';
+  setTimeout(() => mapa.map && mapa.map.invalidateSize(), 120);
+}
+// Si el navegador sale de pantalla completa (Esc, o al pedir la contraseña), el mapa sigue ocupando
+// toda la ventana; se cierra con el botón o con Esc.
+document.addEventListener('fullscreenchange', () => { if (mapa.map) setTimeout(() => mapa.map.invalidateSize(), 120); });
+document.addEventListener('keydown', e => {
+  const w = document.getElementById('mapa-wrap');
+  if (e.key === 'Escape' && w && w.classList.contains('mapa-full') && !document.fullscreenElement && !mapa.dibujando) mapaPantallaCompleta();
+});
 window.addEventListener('beforeunload', e => { if (mapa.dirty) { e.preventDefault(); e.returnValue = ''; } });
 </script>
 </body>
