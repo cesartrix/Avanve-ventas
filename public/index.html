@@ -615,13 +615,20 @@ function calcDiasMes(cfg, hoy) {
   return { mes, trab, rest: mes - trab, fuente: 'admin' };
 }
 function renderDias() {
+  // Se muestra recién cuando hay datos de la API de Chess: los días se cuentan hasta la fecha
+  // de la última actualización (periodo.hasta), no hasta hoy.
   const w = document.getElementById('dias-widget');
   if (!w) return;
-  const d = diasParaCalculo(hoyAR());
+  const api = window.CHESS_API;
+  const hasta = api && api.periodo && api.periodo.hasta;
+  if (!hasta) { w.style.display = 'none'; return; }
+  const d = window.DIAS_CALC || diasParaCalculo(hasta);
   document.getElementById('d-trab').textContent = d.trab ?? '—';
   document.getElementById('d-rest').textContent = d.rest ?? '—';
   document.getElementById('d-mes').textContent  = d.mes  ?? '—';
-  w.title = d.fuente === 'admin' ? 'Días de trabajo configurados en el panel admin' : 'Días de trabajo estimados (lunes a sábado): configurá el mes en el panel admin';
+  const fh = hasta.slice(8, 10) + '/' + hasta.slice(5, 7);
+  w.title = (d.fuente === 'admin' ? 'Días de trabajo configurados en el panel admin' : 'Días de trabajo estimados (lunes a sábado): configurá el mes en el panel admin')
+    + ` · contados hasta la última actualización de la API (${fh})`;
   w.style.display = 'flex';
 }
 async function loadDiasCfg() {
@@ -629,7 +636,6 @@ async function loadDiasCfg() {
     const r = await fetch('/api/dias', { cache: 'no-store' });
     if (r.ok) window.DIAS_CFG = await r.json();
   } catch (_) {}
-  renderDias();
 }
 window.DIAS_PROMISE = loadDiasCfg();
 
@@ -2671,6 +2677,7 @@ async function autoLoadFromServer() {
     document.getElementById('loading').style.display = 'flex';
     document.getElementById('ldtxt').textContent = 'Procesando datos...';
     buildData();
+    renderDias();
     showApp();
   } catch (err) { showErr(err.message); return; }
   loadLegacyExcel();
