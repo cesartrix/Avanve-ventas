@@ -755,10 +755,39 @@ function cobroTitle(x) {
   return t ? `${(t[1] * 100).toLocaleString('es-AR')}% de la proyección (cumpl. > ${Math.round(t[0] * 100)}%)` : 'Cumplimiento proyectado ≤ 99%: sin cobro';
 }
 
+// Proveedores que NO se cuentan ni se muestran en SKU (cantidades, desglose, PDFs).
+// Se comparan por palabras clave sobre la razón social (mayúsculas, sin acentos).
+const SKU_PROV_EXCLUIDOS = ['CRESCINI', 'FRATELLI BRANCA', 'LUCILA FERNANDEZ', 'FERNANDEZ MODESTA',
+  'FEDESUR', 'PROIMAGE', 'MINERA COMIRNA', 'ASISTENCIA MECANICA', 'DELLEPIANE'];
+function skuProvExcluido(prov) {
+  const p = String(prov || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+  return SKU_PROV_EXCLUIDOS.some(k => p.includes(k));
+}
+// Saca los proveedores excluidos de los datos SKU de la API y recalcula cantidades por vendedor,
+// por proveedor y total empresa (artículos distintos). Idempotente.
+function filtrarSkuApi(api) {
+  if (!api || !api.sku_prov_detail || api._skuFiltrado) return;
+  const det = {}, cur = {}, prov = {}, todos = new Set();
+  Object.entries(api.sku_prov_detail).forEach(([cod, lista]) => {
+    const l = (lista || []).filter(p => !skuProvExcluido(p.proveedor));
+    det[cod] = l;
+    const arts = new Set();
+    l.forEach(p => (p.articulos || []).forEach(a => { arts.add(String(a.codigo)); todos.add(String(a.codigo)); }));
+    cur[cod] = arts.size;
+    prov[cod] = l.map(p => ({ proveedor: p.proveedor, cantidad: p.cantidad }));
+  });
+  api.sku_prov_detail = det;
+  api.sku_cur = cur;
+  api.sku_prov = prov;
+  api.sku_total_empresa = todos.size;
+  api._skuFiltrado = true;
+}
+
 function applyChessApi() {
   window.CHESS_APPLIED = null;
   const api = window.CHESS_API;
   if (!api || !api.periodo || !api.facturacion) return;
+  filtrarSkuApi(api);
   window.ENTREGAS = api.entregas || null;
   const dias = diasParaCalculo(api.periodo.hasta);
   window.DIAS_CALC = dias;
@@ -894,6 +923,7 @@ function parseLegacyWB(wb) {
         const k = String(parseInt(r[40], 10));
         if (k === 'NaN' || seen.has(k)) continue;
         seen.add(k);
+        if (skuProvExcluido(provByArt[k] || provSold[k])) continue; // proveedores excluidos de SKU
         window.SKU_DISPONIBLES.push({
           codigo: k,
           descripcion: isBlank(r[41]) ? '(sin descripción)' : String(r[41]).trim(),
