@@ -120,7 +120,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 @media(max-width:900px){.cob-detail-panel{position:static;max-height:none;overflow:visible;}}
 .cob-click{cursor:pointer;}
 .cob-click:hover{background:rgba(255,255,255,0.03);}
-tr.sup-group-hdr.cob-click.sel td,tr.sup-group-sum.cob-click.sel td{background:rgba(0,212,170,0.10)!important;}
+tr.sup-group-hdr.sku-sup-click.sel td,tr.sup-group-hdr.cob-click.sel td,tr.sup-group-sum.cob-click.sel td{background:rgba(0,212,170,0.10)!important;}
 .cob-lbl.sel{background:rgba(0,212,170,0.10);border-radius:6px;}
 .cob-zero summary{cursor:pointer;color:var(--muted);font-size:0.7rem;padding:8px 0;}
 
@@ -255,6 +255,7 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'Roboto Mono',monospace;
 .horas-chart-wrap{position:relative;height:320px;}
 .hst-vendor-row:hover{background:var(--bg);}
 .hst-vendor-row.sel{background:rgba(0,212,170,0.10);}
+tr.sup-group-hdr.sku-sup-click:hover td{background:rgba(255,255,255,0.04);}
 .mcard.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
 .hst-chart-modal{display:none;position:fixed;inset:0;background:#000000cc;z-index:1000;align-items:center;justify-content:center;padding:20px;}
 .hst-chart-modal.show{display:flex;}
@@ -1404,6 +1405,29 @@ function refresh(){buildKpiAv();buildKpiCob();buildCC();buildCF();buildCCob();bu
 
 // ===== SKU POR VENDEDOR / PROVEEDOR: UI =====
 // Cantidad de SKU de un grupo de vendedores: artículos distintos (unión).
+// Selección de la pestaña SKU: código de vendedor, o 'S:<SUPERVISOR>' para el grupo.
+function skuEsSup(key){ return typeof key === 'string' && key.startsWith('S:'); }
+function skuVendGrupo(sup){ return filt(A).filter(x => x.supervisor === sup); }
+// Desglose por proveedor de un vendedor o de un supervisor (como si fuera un solo vendedor):
+// por proveedor, artículos distintos; en el grupo, la cantidad de cada artículo es la
+// cantidad de vendedores del grupo que lo vendieron.
+function skuDetalle(key){
+  const det = window.SKU_PROV_DETAIL || {};
+  if (!skuEsSup(key)) return det[key] || [];
+  const provs = {};
+  skuVendGrupo(key.slice(2)).forEach(x => (det[x.codigo] || []).forEach(p => {
+    const pm = provs[p.proveedor] = provs[p.proveedor] || {};
+    (p.articulos || []).forEach(a => {
+      const k = String(a.codigo || a.descripcion);
+      if (!pm[k]) pm[k] = { codigo: a.codigo, descripcion: a.descripcion, cantidad: 0 };
+      pm[k].cantidad++;
+    });
+  }));
+  return Object.entries(provs).map(([proveedor, m]) => {
+    const articulos = Object.values(m).sort((x, y) => y.cantidad - x.cantidad || String(x.descripcion).localeCompare(String(y.descripcion), 'es'));
+    return { proveedor, cantidad: articulos.length, articulos };
+  }).sort((x, y) => y.cantidad - x.cantidad || x.proveedor.localeCompare(y.proveedor, 'es'));
+}
 function skuTotalGrupo(vens){
   const det = window.SKU_PROV_DETAIL || {};
   const set = new Set();
@@ -1429,8 +1453,9 @@ function renderSku(){
     const tSku = skuTotalGrupo(allBase.filter(x => x.supervisor === sup));
     const tSkuTxt = tSku != null ? tSku.toLocaleString('es-AR') : '—';
     const tSkuTit = 'Total de SKU del grupo: artículos distintos vendidos por todos sus vendedores (un artículo vendido por varios vendedores cuenta una vez)';
-    rows += `<tr class="sup-group-hdr"><td colspan="3" style="color:${col};border-bottom-color:${col}"><span style="display:inline-flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}<span style="font-family:'Roboto Mono',monospace;font-size:0.6rem;font-weight:400;color:var(--muted)">${group.length} vendedores</span></span></td><td style="color:${col};border-bottom-color:${col};font-weight:800;font-family:'Roboto Mono',monospace" title="${tSkuTit}">${tSkuTxt}<div style="font-size:0.55rem;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">total grupo</div></td></tr>`;
-    mcRows += `<div style="display:flex;align-items:center;gap:7px;padding:8px 0 4px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${col}"><span style="width:7px;height:7px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}<span style="margin-left:auto;font-family:'Roboto Mono',monospace;letter-spacing:0" title="${tSkuTit}">${tSkuTxt} <span style="font-size:0.55rem;font-weight:400;color:var(--muted);text-transform:none">SKU total</span></span></div>`;
+    const supKey = 'S:' + sup, supSel = skuSelectedCod === supKey;
+    rows += `<tr class="sup-group-hdr sku-sup-click${supSel ? ' sel' : ''}" onclick="selectSkuVendor('${supKey}')" title="Ver desglose de artículos del supervisor" style="cursor:pointer"><td colspan="3" style="color:${col};border-bottom-color:${col}"><span style="display:inline-flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>📊 ${sl(sup)}<span style="font-family:'Roboto Mono',monospace;font-size:0.6rem;font-weight:400;color:var(--muted)">${group.length} vendedores</span></span></td><td style="color:${col};border-bottom-color:${col};font-weight:800;font-family:'Roboto Mono',monospace" title="${tSkuTit}">${tSkuTxt}<div style="font-size:0.55rem;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">total grupo</div></td></tr>`;
+    mcRows += `<div onclick="selectSkuVendor('${supKey}')" style="cursor:pointer;display:flex;align-items:center;gap:7px;padding:8px 6px 4px;border-radius:6px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${col};${supSel ? 'background:var(--s2,rgba(255,255,255,0.06));' : ''}"><span style="width:7px;height:7px;border-radius:50%;background:${col};display:inline-block"></span>📊 ${sl(sup)}<span style="margin-left:auto;font-family:'Roboto Mono',monospace;letter-spacing:0" title="${tSkuTit}">${tSkuTxt} <span style="font-size:0.55rem;font-weight:400;color:var(--muted);text-transform:none">SKU total</span></span></div>`;
     group.forEach((x,i) => {
       globalIdx++;
       const sel = skuSelectedCod === x.codigo ? ' sel' : '';
@@ -1448,7 +1473,9 @@ function renderSku(){
   });
   tbEl.innerHTML = rows;
   document.getElementById('mc-sku').innerHTML = mcRows;
-  if (skuSelectedCod && !base.some(x => x.codigo === skuSelectedCod)) skuSelectedCod = null;
+  if (skuSelectedCod && (skuEsSup(skuSelectedCod)
+        ? !allBase.some(x => 'S:' + x.supervisor === skuSelectedCod)
+        : !base.some(x => x.codigo === skuSelectedCod))) skuSelectedCod = null;
   renderSkuDetail();
 }
 
@@ -1464,27 +1491,29 @@ function renderSkuDetail(){
     el.innerHTML = `<div style="text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">Elegí un vendedor de la tabla para ver el desglose de SKU por proveedor.</div>`;
     return;
   }
-  const v = A.find(x => x.codigo === skuSelectedCod);
-  const nombre = v ? v.nombre : (getCurName(skuSelectedCod) || skuSelectedCod);
-  const sup = v ? v.supervisor : (getCurSup(skuSelectedCod) || 'SIN SUPERVISOR');
+  const esSup = skuEsSup(skuSelectedCod);
+  const v = esSup ? null : A.find(x => x.codigo === skuSelectedCod);
+  const sup = esSup ? skuSelectedCod.slice(2) : (v ? v.supervisor : (getCurSup(skuSelectedCod) || 'SIN SUPERVISOR'));
+  const nVend = esSup ? skuVendGrupo(sup).length : 0;
+  const nombre = esSup ? `Supervisor ${sl(sup)}` : (v ? v.nombre : (getCurName(skuSelectedCod) || skuSelectedCod));
   const col = sc(sup);
-  const desglose = (window.SKU_PROV && window.SKU_PROV[skuSelectedCod]) || [];
+  const desglose = esSup ? skuDetalle(skuSelectedCod) : ((window.SKU_PROV && window.SKU_PROV[skuSelectedCod]) || []);
   const nFalt = skuFaltantes(skuSelectedCod).reduce((s,p) => s + p.articulos.length, 0);
   const pdfBtn = (desglose.length || nFalt)
     ? `<div class="sku-btns">` +
       (desglose.length ? `<button class="sku-pdf-btn" onclick="exportSkuProveedorPDF('${skuSelectedCod}')" title="Exportar en PDF el detalle de artículos vendidos por proveedor">⬇ PDF vendidos</button>` : '') +
-      (nFalt ? `<button class="sku-pdf-btn falt" onclick="exportSkuFaltantesPDF('${skuSelectedCod}')" title="Exportar en PDF los artículos disponibles que este vendedor todavía no vendió, por proveedor">⬇ PDF faltan vender (${nFalt})</button>` : '') +
+      (nFalt ? `<button class="sku-pdf-btn falt" onclick="exportSkuFaltantesPDF('${skuSelectedCod}')" title="Exportar en PDF los artículos disponibles que ${esSup ? 'ningún vendedor del grupo' : 'este vendedor'} todavía no vendió, por proveedor">⬇ PDF faltan vender (${nFalt})</button>` : '') +
       `</div>`
     : '';
   const header = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
     <div style="display:flex;align-items:center;gap:8px;">
-      <span style="font-family:'Roboto Mono',monospace;font-size:0.65rem;color:var(--muted)">${skuSelectedCod}</span>
+      <span style="font-family:'Roboto Mono',monospace;font-size:0.65rem;color:var(--muted)">${esSup ? nVend + ' vend.' : skuSelectedCod}</span>
       <span style="font-weight:700">${nombre}</span>
       ${tag(sup)}
     </div>
     ${pdfBtn}`;
   if (!desglose.length) {
-    el.innerHTML = header + `</div><div style="text-align:center;color:var(--muted);padding:20px;font-size:0.78rem;">Sin datos de proveedor para este vendedor en la hoja "Base SKU".</div>`;
+    el.innerHTML = header + `</div><div style="text-align:center;color:var(--muted);padding:20px;font-size:0.78rem;">Sin datos de proveedor para ${esSup ? 'este supervisor' : 'este vendedor'}.</div>`;
     return;
   }
   const total = desglose.reduce((s,d) => s + d.cantidad, 0);
@@ -1498,7 +1527,7 @@ function renderSkuDetail(){
       <div style="font-family:'Roboto Mono',monospace;font-weight:700;color:var(--text);min-width:38px;text-align:right;">${d.cantidad}</div>
       <div style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);min-width:38px;text-align:right;">${total?(d.cantidad*100/total).toFixed(0):0}%</div>
     </div>`).join('');
-  el.innerHTML = header + `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted)">${desglose.length} proveedores · <span style="color:var(--text);font-weight:700">${total}</span> SKU</div></div><div>${rows}</div>`;
+  el.innerHTML = header + `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted)">${desglose.length} proveedores · <span style="color:var(--text);font-weight:700">${total}</span> SKU${esSup ? ' (artículos distintos del grupo)' : ''}</div></div><div>${rows}</div>`;
 }
 
 // Exporta a PDF el detalle de artículos por proveedor del vendedor seleccionado
@@ -1510,7 +1539,7 @@ function skuFaltantes(cod){
   const disp = window.SKU_DISPONIBLES || [];
   if (!disp.length) return [];
   const vendidos = new Set();
-  ((window.SKU_PROV_DETAIL && window.SKU_PROV_DETAIL[cod]) || []).forEach(p => p.articulos.forEach(a => vendidos.add(String(parseInt(a.codigo, 10)))));
+  skuDetalle(cod).forEach(p => p.articulos.forEach(a => vendidos.add(String(parseInt(a.codigo, 10)))));
   const map = {};
   disp.forEach(a => {
     if (vendidos.has(a.codigo)) return;
@@ -1522,7 +1551,7 @@ function skuFaltantes(cod){
 }
 
 function exportSkuProveedorPDF(cod){
-  const detalle = (window.SKU_PROV_DETAIL && window.SKU_PROV_DETAIL[cod]) || [];
+  const detalle = skuDetalle(cod);
   buildSkuPDF(cod, detalle, {
     titulo: 'Detalle de artículos vendidos por proveedor',
     resumen: (d, tot) => `${d.length} proveedores · ${tot} SKU vendidos`,
@@ -1549,9 +1578,11 @@ function buildSkuPDF(cod, detalle, o){
     return;
   }
   if (!detalle.length) { alert(o.vacio); return; }
-  const v = A.find(x => x.codigo === cod);
-  const nombre = v ? v.nombre : (getCurName(cod) || cod);
-  const sup = v ? v.supervisor : (getCurSup(cod) || 'SIN SUPERVISOR');
+  const esSup = skuEsSup(cod);
+  const v = esSup ? null : A.find(x => x.codigo === cod);
+  const sup = esSup ? cod.slice(2) : (v ? v.supervisor : (getCurSup(cod) || 'SIN SUPERVISOR'));
+  const nombre = esSup ? `Supervisor ${sl(sup)}` : (v ? v.nombre : (getCurName(cod) || cod));
+  const codTxt = esSup ? `${skuVendGrupo(sup).length} vendedores` : `cód. ${cod}`;
   const total = o.conCantidad ? detalle.reduce((s, p) => s + p.cantidad, 0) : detalle.reduce((s, p) => s + p.articulos.length, 0);
   const fechaStr = new Date().toLocaleDateString('es-AR');
 
@@ -1570,10 +1601,16 @@ function buildSkuPDF(cod, detalle, o){
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10.5);
   doc.setTextColor(70, 70, 70);
-  doc.text(`Vendedor: ${nombre}  (cód. ${cod})`, marginX, y);
-  y += 14;
-  doc.text(`Supervisor: ${sup}`, marginX, y);
-  y += 14;
+  if (esSup) {
+    doc.text(`Supervisor: ${sl(sup)}  (${codTxt})`, marginX, y);
+    y += 14;
+    if (o.conCantidad) { doc.text('SKU del grupo = artículos distintos · "Vend." = vendedores del grupo que vendieron el artículo', marginX, y); y += 14; }
+  } else {
+    doc.text(`Vendedor: ${nombre}  (cód. ${cod})`, marginX, y);
+    y += 14;
+    doc.text(`Supervisor: ${sup}`, marginX, y);
+    y += 14;
+  }
   doc.text(`${o.resumen(detalle, total)} · Generado ${fechaStr}`, marginX, y);
   y += 10;
 
@@ -1588,7 +1625,7 @@ function buildSkuPDF(cod, detalle, o){
   const sepIdx = perHalf;
   const celdas = a => a ? (o.conCantidad ? [a.codigo || '—', a.descripcion, String(a.cantidad)] : [a.codigo || '—', a.descripcion])
                         : (o.conCantidad ? ['', '', ''] : ['', '']);
-  const subHead = o.conCantidad ? ['Código', 'Descripción', 'Cant.'] : ['Código', 'Descripción'];
+  const subHead = o.conCantidad ? ['Código', 'Descripción', esSup ? 'Vend.' : 'Cant.'] : ['Código', 'Descripción'];
   const colStyles = {};
   [0, perHalf + 1].forEach(base => {
     colStyles[base] = { cellWidth: wCod };
@@ -1645,15 +1682,15 @@ function buildSkuPDF(cod, detalle, o){
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(140, 140, 140);
-        doc.text(`${nombre} (${cod}) — ${o.pie}`, marginX, doc.internal.pageSize.getHeight() - 18);
+        doc.text(`${nombre} (${esSup ? codTxt : cod}) — ${o.pie}`, marginX, doc.internal.pageSize.getHeight() - 18);
         doc.text(String(doc.internal.getNumberOfPages()), pageW - marginX, doc.internal.pageSize.getHeight() - 18, { align: 'right' });
       }
     });
     y = doc.lastAutoTable.finalY;
   });
 
-  const fileSafeName = nombre.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  doc.save(`SKU_${o.sufijo}_${cod}_${fileSafeName}_${fechaStr.replace(/\//g,'-')}.pdf`);
+  const fileSafeName = nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  doc.save(`SKU_${o.sufijo}_${esSup ? 'sup' : cod}_${fileSafeName}_${fechaStr.replace(/\//g,'-')}.pdf`);
 }
 
 // ===== EXPORT =====
