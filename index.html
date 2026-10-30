@@ -1403,19 +1403,34 @@ function buildSupCards(){document.getElementById('supcards').innerHTML=SUPS.map(
 function refresh(){buildKpiAv();buildKpiCob();buildCC();buildCF();buildCCob();buildCCCC();buildDist();buildCSF();buildCSC();renderAv();renderCob();buildRanking();buildSupCards();renderSku();renderEnt();if(typeof renderMapa==='function')renderMapa(false);}
 
 // ===== SKU POR VENDEDOR / PROVEEDOR: UI =====
+// Cantidad de SKU de un grupo de vendedores: artículos distintos (unión).
+function skuTotalGrupo(vens){
+  const det = window.SKU_PROV_DETAIL || {};
+  const set = new Set();
+  vens.forEach(x => (det[x.codigo] || []).forEach(p => (p.articulos || []).forEach(a => set.add(String(a.codigo || a.descripcion)))));
+  if (set.size) return set.size;
+  return vens.some(x => x.cantidad_sku != null) ? 0 : null;
+}
 function renderSku(){
   const tbEl = document.getElementById('tb-sku');
   if (!tbEl) return; // la pestaña SKU no está en el DOM (p. ej. dentro del export standalone)
   const q = (document.getElementById('ssku')?.value || '').toLowerCase();
-  const base = filt(A).filter(x => x.nombre.toLowerCase().includes(q));
+  const allBase = filt(A);
+  const base = allBase.filter(x => x.nombre.toLowerCase().includes(q));
   const supOrder = cur === 'TODOS' ? [...SUPS] : [cur];
   let rows = '', mcRows = '', globalIdx = 0;
   supOrder.forEach(sup => {
     const group = base.filter(x => x.supervisor === sup).sort((a,b) => (b.cantidad_sku||0) - (a.cantidad_sku||0));
     if (!group.length) return;
     const col = sc(sup);
-    rows += `<tr class="sup-group-hdr"><td colspan="4" style="color:${col};border-bottom-color:${col}"><span style="display:inline-flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}<span style="font-family:'Roboto Mono',monospace;font-size:0.6rem;font-weight:400;color:var(--muted)">${group.length} vendedores</span></span></td></tr>`;
-    mcRows += `<div style="display:flex;align-items:center;gap:7px;padding:8px 0 4px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${col}"><span style="width:7px;height:7px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}</div>`;
+    // Total del supervisor: artículos distintos vendidos por todos sus vendedores
+    // (como si fuera un solo vendedor; mismo criterio que el subtotal de Avance).
+    // Se calcula sobre todo el grupo, sin aplicar el buscador.
+    const tSku = skuTotalGrupo(allBase.filter(x => x.supervisor === sup));
+    const tSkuTxt = tSku != null ? tSku.toLocaleString('es-AR') : '—';
+    const tSkuTit = 'Total de SKU del grupo: artículos distintos vendidos por todos sus vendedores (un artículo vendido por varios vendedores cuenta una vez)';
+    rows += `<tr class="sup-group-hdr"><td colspan="3" style="color:${col};border-bottom-color:${col}"><span style="display:inline-flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}<span style="font-family:'Roboto Mono',monospace;font-size:0.6rem;font-weight:400;color:var(--muted)">${group.length} vendedores</span></span></td><td style="color:${col};border-bottom-color:${col};font-weight:800;font-family:'Roboto Mono',monospace" title="${tSkuTit}">${tSkuTxt}<div style="font-size:0.55rem;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">total grupo</div></td></tr>`;
+    mcRows += `<div style="display:flex;align-items:center;gap:7px;padding:8px 0 4px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${col}"><span style="width:7px;height:7px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}<span style="margin-left:auto;font-family:'Roboto Mono',monospace;letter-spacing:0" title="${tSkuTit}">${tSkuTxt} <span style="font-size:0.55rem;font-weight:400;color:var(--muted);text-transform:none">SKU total</span></span></div>`;
     group.forEach((x,i) => {
       globalIdx++;
       const sel = skuSelectedCod === x.codigo ? ' sel' : '';
