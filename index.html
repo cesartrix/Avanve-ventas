@@ -1943,7 +1943,7 @@ function buildHistorico() {
   // Build month tabs
   tabsEl.innerHTML = window.HIST.map((h,i) =>
     `<button class="hst-mtab${i===window.HIST.length-1?' active':''}" onclick="renderHist(${i},this)">${h.mes}</button>`
-  ).join('') + `<button class="hst-resumen-btn" onclick="exportResumenMensual(window.HIST_IDX)" title="Resumen del mes seleccionado: empresa, supervisores y vendedores">⬇ Resumen del mes (PDF)</button>`;
+  ).join('') + `<button class="hst-resumen-btn" onclick="exportResumenMensual(window.HIST_IDX)" title="Resumen del mes seleccionado: empresa, supervisores y vendedores">⬇ Resumen del mes</button>`;
 
   renderHist(window.HIST.length - 1, tabsEl.lastElementChild);
 }
@@ -2801,17 +2801,26 @@ async function loadMensual() {
 // Une el histórico del Excel con los meses cerrados de la API:
 //  · meses del Excel: se les agrega la lista de artículos por vendedor (sku_arts) para el SKU del grupo;
 //  · meses que no están en el Excel (octubre 2026 en adelante): se arman con la API + los objetivos del admin.
+// sku_arts del mes sin los artículos de proveedores excluidos de SKU (si el mes trae art_prov: art -> proveedor)
+function artsSinExcluidos(m) {
+  if (!m || !m.sku_arts) return null;
+  if (!m.art_prov) return m.sku_arts;
+  const o = {};
+  Object.entries(m.sku_arts).forEach(([c, l]) => { o[c] = (l || []).filter(a => !skuProvExcluido(m.art_prov[a])); });
+  return o;
+}
 function completarHistorico() {
   window.HIST = window.HIST || [];
   const M = window.MENSUAL || {};
   const hoyMes = hoyAR().slice(0, 7);
-  window.HIST.forEach(h => { if (h.key && M[h.key]) h.arts = M[h.key].sku_arts || null; });
+  window.HIST.forEach(h => { if (h.key && M[h.key]) h.arts = artsSinExcluidos(M[h.key]); });
   Object.keys(M).sort().forEach(key => {
     if (key >= hoyMes || window.HIST.some(h => h.key === key)) return;
     const m = M[key];
     const objs = (window.OBJ_CFG || {})[key];
     if (!objs || !Array.isArray(objs.vendedores)) { console.warn(`Histórico ${key}: no hay objetivos cargados para ese mes`); return; }
     const covBy = {}; (m.cobertura || []).forEach(c => covBy[String(c.codigo)] = c);
+    const arts = artsSinExcluidos(m);
     const vendedores = objs.vendedores.map(v => {
       const cod = String(v.codigo), obj = +v.objetivo || 0, fac = +((m.facturacion || {})[cod] || 0);
       const cov = covBy[cod];
@@ -2822,12 +2831,13 @@ function completarHistorico() {
         cumplimiento: obj > 0 ? fac / obj * 100 : 0,
         cobertura: cov ? +cov.cobertura : null, ccc: cov ? cov.ccc : null, cartera: cov ? cov.cartera : null,
         ccc_faltante: cov ? cov.ccc_faltante : null,
-        cantidad_sku: (m.sku_cur || {})[cod] ?? null,
+        cantidad_sku: m.art_prov ? (arts[cod] ? arts[cod].length : null) : ((m.sku_cur || {})[cod] ?? null),
       };
     });
     const nombre = MESES_TXT[+key.slice(5) - 1];
     const label = nombre.charAt(0).toUpperCase() + nombre.slice(1) + (+key.slice(0, 4) !== HIST_EXCEL_ANIO ? ' ' + key.slice(0, 4) : '');
-    window.HIST.push({ mes: label, key, vendedores, skuGeneral: m.sku_total_empresa ?? null, arts: m.sku_arts || null, fuente: 'api' });
+    const skuGeneral = m.art_prov ? new Set(Object.values(arts).flat()).size : (m.sku_total_empresa ?? null);
+    window.HIST.push({ mes: label, key, vendedores, skuGeneral, arts, fuente: 'api' });
   });
   window.HIST.sort((a, b) => String(a.key || '').localeCompare(String(b.key || '')));
 }
@@ -2843,7 +2853,7 @@ function skuGrupoHist(h, g) {
   return { v: c.length ? Math.round(c.reduce((a, x) => a + x.cantidad_sku, 0) / c.length) : null, exacto: false };
 }
 
-// ===== RESUMEN MENSUAL (PDF) — pestaña Histórico =====
+// ===== RESUMEN MENSUAL (HTML descargable) — pestaña Histórico =====
 // Mes cerrado: empresa total → por supervisor → por vendedor. Datos del mes del Histórico (h.vendedores)
 // + data/chess_api_mensual/AAAA-MM.json (cta cte / contado, día de visita, SKU del grupo)
 // + objetivos y horas del admin + días de trabajo del admin.
@@ -2870,6 +2880,7 @@ function resumenMensualDatos(h) {
   const agg = g => {
     const s = (k) => g.reduce((a, x) => a + (+x[k] || 0), 0);
     const conCov = g.filter(x => x.cartera);
+    const conPct = g.filter(x => x.cobertura != null);
     const ccc = conCov.reduce((a, x) => a + (+x.ccc || 0), 0), car = conCov.reduce((a, x) => a + (+x.cartera || 0), 0);
     const dvs = g.filter(x => x.dv).map(x => x.dv);
     const dvt = { LUJU: 0, MAVI: 0, MISA: 0, total: 0 }; dvs.forEach(d => ['LUJU', 'MAVI', 'MISA', 'total'].forEach(k => dvt[k] += +d[k] || 0));
@@ -2878,6 +2889,7 @@ function resumenMensualDatos(h) {
       n: g.length, objetivo: s('objetivo'), facturacion: s('facturacion'), proyeccion: s('proyeccion'), cobro: s('cobro'),
       cta: fp ? s('cta') : null, cont: fp ? s('cont') : null, otro: fp ? s('otro') : null,
       ccc, cartera: car, cobertura: car ? ccc / car * 100 : null,
+      covProm: conPct.length ? conPct.reduce((a, x) => a + (+x.cobertura || 0), 0) / conPct.length : null,
       enObj: g.filter(x => x.cumpl >= 100).length,
       dv: dvt.total ? dvt : null,
       horas: hs.length ? hs.reduce((a, x) => a + x.horas, 0) / hs.length : null,
@@ -2899,144 +2911,151 @@ function resumenMensualDatos(h) {
 function exportResumenMensual(idx) {
   const h = window.HIST && window.HIST[idx];
   if (!h) return;
-  if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) { alert('No se pudo cargar la librería de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
+  try {
   const R = resumenMensualDatos(h);
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
-  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), mx = 32;
-  const mesNom = MESES_TXT[+h.key.slice(5) - 1];
-  const titulo = 'Resumen mensual · ' + mesNom.charAt(0).toUpperCase() + mesNom.slice(1) + ' ' + h.key.slice(0, 4);
+  const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const $ = v => v == null ? '—' : (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString('es-AR');
-  const pct = (v, d = 1) => v == null || !isFinite(v) ? '—' : v.toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d }) + '%';
+  const pc = (v, d = 1) => v == null || !isFinite(v) ? '—' : v.toFixed(d) + '%';
   const num = v => v == null ? '—' : Math.round(v).toLocaleString('es-AR');
   const hhmm = v => v == null ? '—' : Math.floor(v) + ':' + String(Math.round((v % 1) * 60)).padStart(2, '0');
   const part = (a, t) => (a == null || !t) ? null : a / t * 100;
-  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-  const cumplColor = c => c >= 100 ? [0, 140, 110] : c >= 90 ? [190, 130, 0] : [200, 50, 50];
-  const dvTxt = d => d && d.total ? ['LUJU', 'MAVI', 'MISA'].map(k => Math.round(d[k] / d.total * 100)).join(' / ') : '—';
+  const cls = c => c >= 100 ? 'ph' : c >= 80 ? 'pm' : 'pl';
+  const badge = c => c >= 100 ? '<span class="badge bg2">✓ Ok</span>' : c >= 80 ? '<span class="badge by2">⚠ Cerca</span>' : '<span class="badge br2">✗ Bajo</span>';
+  const mesNom = MESES_TXT[+h.key.slice(5) - 1];
+  const mesCap = mesNom.charAt(0).toUpperCase() + mesNom.slice(1) + ' ' + h.key.slice(0, 4);
+  const fdm = s => s ? s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4) : '';
+  const per = R.periodo ? `${fdm(R.periodo.desde)} al ${fdm(R.periodo.hasta)}` : mesCap;
   const gen = new Date().toLocaleString('es-AR', { hour12: false }).slice(0, -3);
-  const per = R.periodo ? `${R.periodo.desde.split('-').reverse().join('/')} al ${R.periodo.hasta.split('-').reverse().join('/')}` : mesNom;
+  const dvBar = d => dvBarHtml({ dia_visita: d });
+  // Barra de condición de venta (cta cte / contado), mismo estilo que la barra de día de visita
+  const pagoBar = t => {
+    if (t.cta == null || !t.facturacion) return '<span class="dv-empty">Sin datos</span>';
+    const segs = [['CTA CTE', t.cta, '#7b61ff'], ['CONTADO', t.cont, '#00a884']].concat(t.otro ? [['OTRO', t.otro, '#5a6072']] : []).filter(s => s[1] > 0);
+    const tot = segs.reduce((a, s) => a + s[1], 0);
+    return '<div class="dvbar" style="max-width:none">' + segs.map(([n, v, c]) => { const p = v / tot * 100;
+      return `<div class="dvseg" style="width:${p}%;background:${c}" title="${n}: ${$(v)} (${p.toFixed(1)}%)">${p >= 10 ? `<b>${n}</b>${p >= 15 ? `<small>${p.toFixed(1)}%</small>` : ''}` : ''}</div>`; }).join('') + '</div>';
+  };
+  const kpiStrip = (t, empresa) => {
+    const c = t.objetivo ? t.proyeccion / t.objetivo * 100 : 0;
+    return `<div class="kstrip">
+      <div class="kpi"><div class="kl">Facturación</div><div class="kv kv-big">${$(t.facturacion)}</div><div class="ks">obj ${$(t.objetivo)}</div></div>
+      <div class="kpi p"><div class="kl">Cumplimiento</div><div class="kv ${cls(c)}">${pc(c)}</div><div class="ks">dif. ${$(t.facturacion - t.objetivo)}</div></div>
+      <div class="kpi y"><div class="kl">En objetivo</div><div class="kv">${t.enObj}/${t.n}</div><div class="ks">≥100%</div></div>
+      <div class="kpi"><div class="kl">Cuenta corriente</div><div class="kv kv-big">${$(t.cta)}</div><div class="ks">${t.cta == null ? 'sin dato' : pc(part(t.cta, t.facturacion)) + ' del facturado'}</div></div>
+      <div class="kpi o"><div class="kl">Contado</div><div class="kv kv-big">${$(t.cont)}</div><div class="ks">${t.cont == null ? 'sin dato' : pc(part(t.cont, t.facturacion)) + ' del facturado'}</div></div>
+      <div class="kpi"><div class="kl">Cobro</div><div class="kv kv-big">${$(t.cobro)}</div><div class="ks">comisión</div></div>
+      <div class="kpi o"><div class="kl">Cobertura prom.</div><div class="kv">${pc(t.covProm)}</div><div class="ks">objetivo 85%</div></div>
+      <div class="kpi p"><div class="kl">CCC / Cartera</div><div class="kv">${pc(t.cobertura)}</div><div class="ks">${num(t.ccc)} / ${num(t.cartera)}</div></div>
+      <div class="kpi y"><div class="kl">${empresa ? 'Skus total empresa' : 'Cant. SKU del grupo'}</div><div class="kv">${num(t.sku && t.sku.v)}</div><div class="ks">${t.sku && t.sku.exacto ? 'artículos distintos' : 'promedio por vendedor'}</div></div>
+      ${empresa ? `<div class="kpi"><div class="kl">Días trabajados</div><div class="kv">${R.dias ?? '—'}</div><div class="ks">del mes</div></div>
+      <div class="kpi o"><div class="kl">Venta media diaria</div><div class="kv kv-big">${R.dias ? $(t.facturacion / R.dias) : '—'}</div><div class="ks">facturación / días</div></div>` : ''}
+      <div class="kpi p"><div class="kl">Horas en ruta</div><div class="kv">${hhmm(t.horas)}</div><div class="ks">promedio por vendedor</div></div>
+    </div>`;
+  };
+  const barras = (t) => `<div class="g2 rs-bars">
+      <div class="panel"><div class="ptitle"><span class="dot p"></span>Facturación por condición de venta</div>${pagoBar(t)}
+        <div class="rs-leg"><span><i style="background:#7b61ff"></i>Cta. cte. ${$(t.cta)}</span><span><i style="background:#00a884"></i>Contado ${$(t.cont)}</span>${t.otro ? `<span><i style="background:#5a6072"></i>Otro ${$(t.otro)}</span>` : ''}</div></div>
+      <div class="panel"><div class="ptitle"><span class="dot o"></span>Día de visita (incidencia en la facturación)</div>${t.dv ? dvBar(t.dv).replace('class="dvbar"', 'class="dvbar" style="max-width:none"') : '<span class="dv-empty">Sin datos</span>'}
+        <div class="rs-leg">${t.dv ? ['LUJU', 'MAVI', 'MISA'].map(k => `<span><i style="background:${DIA_VISITA_COLORS[k]}"></i>${k} ${$(t.dv[k])}</span>`).join('') : ''}</div></div>
+    </div>`;
 
-  const header = (sub) => {
-    doc.setFillColor(17, 19, 24); doc.rect(0, 0, W, 54, 'F');
-    doc.setFillColor(0, 212, 170); doc.rect(0, 54, W, 3, 'F');
-    doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(17);
-    doc.text(titulo, mx, 26);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(190, 195, 205);
-    doc.text(`RAP · Período ${per}` + (sub ? '  ·  ' + sub : ''), mx, 43);
-  };
-  const footer = () => {
-    const n = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= n; i++) {
-      doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(130, 130, 130); doc.setFont('helvetica', 'normal');
-      doc.text(`${titulo} · generado ${gen}`, mx, H - 14);
-      doc.text(`Página ${i} de ${n}`, W - mx, H - 14, { align: 'right' });
-    }
-  };
-  // Tarjetas de KPI: [label, valor, sub, color?]
-  const cards = (y, items, cols) => {
-    const gap = 8, cw = (W - 2 * mx - gap * (cols - 1)) / cols, ch = 50;
-    items.forEach((it, i) => {
-      const x = mx + (i % cols) * (cw + gap), yy = y + Math.floor(i / cols) * (ch + gap);
-      doc.setFillColor(245, 247, 250); doc.setDrawColor(222, 226, 233); doc.roundedRect(x, yy, cw, ch, 4, 4, 'FD');
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(110, 116, 130);
-      doc.text(it[0].toUpperCase(), x + 8, yy + 13);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(12.5); doc.setTextColor(...(it[3] || [20, 22, 28]));
-      doc.text(String(it[1]), x + 8, yy + 31, { maxWidth: cw - 14 });
-      if (it[2]) { doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(120, 124, 135); doc.text(String(it[2]), x + 8, yy + 43, { maxWidth: cw - 14 }); }
-    });
-    return y + Math.ceil(items.length / cols) * (ch + gap);
-  };
-  const kpis = (t, conDias) => {
-    const c = t.objetivo ? t.proyeccion / t.objetivo * 100 : null;
-    const it = [
-      ['Objetivo', $(t.objetivo), `${t.n} vendedores`],
-      ['Facturado', $(t.facturacion), 'neto, sin conceptos ni combos'],
-      ['Cumplimiento', pct(c), `${t.enObj} de ${t.n} en objetivo`, c != null ? cumplColor(c) : null],
-      ['Diferencia vs objetivo', $(t.facturacion - t.objetivo), null, t.facturacion >= t.objetivo ? [0, 140, 110] : [200, 50, 50]],
-      ['Cobro (comisión)', $(t.cobro), 'escala columna L'],
-      ['Cuenta corriente', $(t.cta), t.cta == null ? 'sin dato' : pct(part(t.cta, t.facturacion)) + ' del facturado'],
-      ['Contado', $(t.cont), t.cont == null ? 'sin dato' : pct(part(t.cont, t.facturacion)) + ' del facturado'],
-      ['Cobertura', pct(t.cobertura), t.cartera ? `${num(t.ccc)} CCC / ${num(t.cartera)} cartera` : null],
-      ['Cant. SKU', num(t.sku && t.sku.v), t.sku && t.sku.exacto ? 'artículos distintos' : 'promedio por vendedor'],
-      ['Día de visita', dvTxt(t.dv), 'LUJU / MAVI / MISA (% fact.)'],
-    ];
-    if (conDias) {
-      it.push(['Días trabajados', R.dias ?? '—', 'panel admin']);
-      it.push(['Venta media diaria', R.dias ? $(t.facturacion / R.dias) : '—', null]);
-      it.push(['Horas en ruta prom.', hhmm(t.horas), 'promedio por vendedor']);
-    } else {
-      it.push(['Horas en ruta prom.', hhmm(t.horas), 'promedio por vendedor']);
-    }
-    return it;
-  };
-  const tblStyles = { font: 'helvetica', fontSize: 7.8, cellPadding: { top: 3.5, bottom: 3.5, left: 4, right: 4 }, lineColor: [225, 228, 235], lineWidth: 0.4, textColor: [30, 32, 38] };
+  // ---- Por supervisor (tarjetas + tabla) ----
+  const supCards = R.sups.map(s => { const t = s.t, c = t.objetivo ? t.proyeccion / t.objetivo * 100 : 0, col = sc(s.sup);
+    return `<a class="scard rs-link" href="#sup-${s.sup.replace(/\s+/g, '-')}" style="border-left-color:${col}">
+      <div class="scnm" style="color:${col}">${esc(sl(s.sup))}</div>
+      <div class="scr"><span>Vendedores</span><span>${t.n}</span></div>
+      <div class="scr"><span>Objetivo</span><span>${$(t.objetivo)}</span></div>
+      <div class="scr"><span>Facturado</span><span>${$(t.facturacion)}</span></div>
+      <div class="scr"><span>Cta. cte. / Contado</span><span>${t.cta == null ? '—' : pc(part(t.cta, t.facturacion), 0) + ' / ' + pc(part(t.cont, t.facturacion), 0)}</span></div>
+      <div class="scr"><span>Cumplimiento</span><span class="${cls(c)}">${pc(c)}</span></div>
+      <div class="scr"><span>En objetivo</span><span>${t.enObj}/${t.n}</span></div>
+      <div class="scr"><span>CCC / Cartera</span><span>${pc(t.cobertura)}</span></div>
+      <div class="scr"><span>SKU del grupo</span><span>${num(t.sku && t.sku.v)}</span></div>
+      <div class="scr"><span>Cobro</span><span>${$(t.cobro)}</span></div>
+    </a>`; }).join('');
+  const supRow = (label, col, t, sku, hdr) => { const c = t.objetivo ? t.proyeccion / t.objetivo * 100 : 0;
+    return `<tr${hdr ? ' class="sup-group-sum"' : ''}><td class="nc" style="${col ? 'color:' + col : ''}">${col ? `<span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block;margin-right:6px"></span>` : ''}${esc(label)}</td>
+      <td>${t.n}</td><td>${$(t.objetivo)}</td><td>${$(t.facturacion)}</td><td>${$(t.cta)}</td><td>${$(t.cont)}</td><td>${pc(part(t.cta, t.facturacion))}</td>
+      <td class="${cls(c)}" style="font-weight:700">${pc(c)}</td><td>${$(t.facturacion - t.objetivo)}</td><td>${t.enObj}/${t.n}</td>
+      <td>${pc(t.covProm)}</td><td>${cccCartHtml(t.ccc, t.cartera)}</td><td>${num(sku && sku.v)}</td><td>${$(t.cobro)}</td><td>${t.dv ? dvBar(t.dv) : '<span class="dv-empty">Sin datos</span>'}</td></tr>`; };
+  const supTable = `<div class="ts"><table><thead><tr><th>Supervisor</th><th>Vend.</th><th>Objetivo</th><th>Facturado</th><th>Cta. cte.</th><th>Contado</th><th>% Cta. cte.</th><th>Cumpl.</th><th>Dif. vs obj.</th><th>En obj.</th><th>Cobert. prom.</th><th>CCC/Cartera</th><th>SKU</th><th>Cobro</th><th>Día de Visita</th></tr></thead><tbody>
+    ${R.sups.map(s => supRow(sl(s.sup), sc(s.sup), s.t, s.t.sku)).join('')}${supRow('Empresa', null, R.tot, R.tot.sku, true)}</tbody></table></div>`;
 
-  // ---------- Página 1: empresa ----------
-  header('Empresa total');
-  let y = 72;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(20, 22, 28);
-  doc.text('Empresa total', mx, y + 4); y += 12;
-  y = cards(y, kpis(R.tot, true), 5) + 4;
-  if (!R.fp) {
-    doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(200, 50, 50);
-    doc.text('Cuenta corriente / contado sin dato para este mes: falta correr el cierre del mes con chess_sync actualizado.', mx, y); y += 10;
-  }
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(20, 22, 28);
-  doc.text('Por supervisor', mx, y + 6); y += 12;
-  const supRow = (label, t, sku) => {
-    const c = t.objetivo ? t.proyeccion / t.objetivo * 100 : null;
-    return [label, t.n, $(t.objetivo), $(t.facturacion), $(t.cta), pct(part(t.cta, t.facturacion)), $(t.cont), pct(part(t.cont, t.facturacion)),
-      pct(c), `${t.enObj}/${t.n}`, pct(t.cobertura), num(sku && sku.v), $(t.cobro), dvTxt(t.dv)];
-  };
-  const supHead = [['Supervisor', 'Vend.', 'Objetivo', 'Facturado', 'Cta. cte.', '% CC', 'Contado', '% Cont.', 'Cumpl.', 'En obj.', 'Cobertura', 'SKU', 'Cobro', 'LU/MA/MI %']];
-  doc.autoTable({
-    startY: y, head: supHead,
-    body: R.sups.map(s => supRow(sl(s.sup), s.t, s.t.sku)),
-    foot: [supRow('Empresa', R.tot, R.tot.sku)],
-    theme: 'grid', styles: tblStyles, margin: { left: mx, right: mx },
-    headStyles: { fillColor: [17, 19, 24], textColor: 255, fontStyle: 'bold', halign: 'right' },
-    footStyles: { fillColor: [232, 236, 242], textColor: [20, 22, 28], fontStyle: 'bold', halign: 'right' },
-    columnStyles: { 0: { halign: 'left', fontStyle: 'bold' } }, bodyStyles: { halign: 'right' },
-    didParseCell: d => {
-      if (d.column.index === 0 && (d.section === 'head' || d.section === 'foot')) d.cell.styles.halign = 'left';
-      if (d.section === 'body' && d.column.index === 0) { const s = R.sups[d.row.index]; if (s) d.cell.styles.textColor = rgb(SC[s.sup]).map(v => Math.round(v * 0.75)); }
-      if (d.section === 'body' && d.column.index === 8) { const s = R.sups[d.row.index]; const c = s.t.objetivo ? s.t.proyeccion / s.t.objetivo * 100 : 0; d.cell.styles.textColor = cumplColor(c); d.cell.styles.fontStyle = 'bold'; }
-    },
-  });
+  // ---- Detalle por vendedor, un bloque por supervisor ----
+  const venHead = '<thead><tr><th>#</th><th>Vendedor</th><th>Día de Visita</th><th>Objetivo</th><th>Facturado</th><th>Cta. cte.</th><th>Contado</th><th>% Cta. cte.</th><th>Cumpl.</th><th>Dif. vs obj.</th><th>CCC/Cartera</th><th>Cobro</th><th>Cant. SKU</th><th>Horas</th><th>Estado</th></tr></thead>';
+  const supBlocks = R.sups.map(s => { const t = s.t, col = sc(s.sup), c = t.objetivo ? t.proyeccion / t.objetivo * 100 : 0;
+    const rows = s.vens.map((x, i) => `<tr>
+        <td style="color:var(--muted)">${i + 1}</td>
+        <td class="nc"><span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:5px">${esc(x.codigo)}</span>${esc(x.nombre)}</td>
+        <td>${dvBar(x.dv)}</td><td>${$(x.objetivo)}</td><td>${$(x.facturacion)}</td><td>${$(x.cta)}</td><td>${$(x.cont)}</td><td>${pc(part(x.cta, x.facturacion))}</td>
+        <td class="${cls(x.cumpl)}" style="font-weight:700">${pc(x.cumpl)}</td>
+        <td class="${x.facturacion >= x.objetivo ? 'ph' : 'pl'}">${$(x.facturacion - x.objetivo)}</td>
+        <td>${cccCartHtml(x.ccc, x.cartera)}</td><td title="${esc(cobroTitle(x))}">${x.cobro ? $(x.cobro) : '—'}</td>
+        <td style="color:var(--text);font-weight:600">${num(x.cantidad_sku)}</td><td>${hhmm(x.horas)}</td><td>${badge(x.cumpl)}</td></tr>`).join('');
+    const sum = `<tr class="sup-group-sum"><td></td><td>Subtotal · ${t.n} vend.</td><td>${t.dv ? dvBar(t.dv) : ''}</td><td>${$(t.objetivo)}</td><td>${$(t.facturacion)}</td><td>${$(t.cta)}</td><td>${$(t.cont)}</td><td>${pc(part(t.cta, t.facturacion))}</td>
+        <td class="${cls(c)}">${pc(c)}</td><td>${$(t.facturacion - t.objetivo)}</td><td>${cccCartHtml(t.ccc, t.cartera)}</td><td>${$(t.cobro)}</td><td title="Artículos distintos del grupo">${num(t.sku && t.sku.v)}</td><td>${hhmm(t.horas)}</td><td></td></tr>`;
+    return `<section class="rs-sec" id="sup-${s.sup.replace(/\s+/g, '-')}">
+      <div class="rs-h2" style="color:${col};border-color:${col}"><span style="width:10px;height:10px;border-radius:50%;background:${col};display:inline-block"></span>${esc(sl(s.sup))}<span class="rs-sub">${t.n} vendedores</span><a class="rs-top" href="#top">↑ Empresa</a></div>
+      ${kpiStrip(t, false)}${barras(t)}
+      <div class="panel"><div class="ptitle"><span class="dot" style="background:${col}"></span>Vendedores · ordenados por cumplimiento</div>
+        <div class="ts"><table>${venHead}<tbody>${rows}${sum}</tbody></table></div></div>
+    </section>`; }).join('');
 
-  // ---------- Una página por supervisor ----------
-  const venHead = [['#', 'Vendedor', 'Objetivo', 'Facturado', 'Cta. cte.', 'Contado', '% CC', 'Cumpl.', 'Dif. vs obj.', 'Cobertura', 'CCC / Cart.', 'SKU', 'Cobro', 'Horas', 'LU/MA/MI %']];
-  R.sups.forEach(s => {
-    doc.addPage();
-    header('Supervisor ' + sl(s.sup));
-    let yy = 72;
-    const col = rgb(SC[s.sup]);
-    doc.setFillColor(...col); doc.rect(mx, yy - 6, 5, 16, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(20, 22, 28);
-    doc.text(sl(s.sup), mx + 11, yy + 6); yy += 18;
-    yy = cards(yy, kpis(s.t, false), 6) + 4;
-    doc.autoTable({
-      startY: yy, head: venHead,
-      body: s.vens.map((x, i) => [i + 1, `${x.codigo} - ${x.nombre}`, $(x.objetivo), $(x.facturacion), $(x.cta), $(x.cont), pct(part(x.cta, x.facturacion), 0),
-        pct(x.cumpl), $(x.facturacion - x.objetivo), x.cartera ? pct(x.ccc / x.cartera * 100) : '—', x.cartera ? `${x.ccc} / ${x.cartera}` : '—',
-        num(x.cantidad_sku), x.cobro ? $(x.cobro) : '—', hhmm(x.horas), dvTxt(x.dv)]),
-      foot: [['', `Total ${sl(s.sup)}`, $(s.t.objetivo), $(s.t.facturacion), $(s.t.cta), $(s.t.cont), pct(part(s.t.cta, s.t.facturacion), 0),
-        pct(s.t.objetivo ? s.t.proyeccion / s.t.objetivo * 100 : null), $(s.t.facturacion - s.t.objetivo), pct(s.t.cobertura),
-        s.t.cartera ? `${num(s.t.ccc)} / ${num(s.t.cartera)}` : '—', num(s.t.sku && s.t.sku.v), $(s.t.cobro), hhmm(s.t.horas), dvTxt(s.t.dv)]],
-      theme: 'grid', styles: tblStyles, margin: { left: mx, right: mx, top: 70 },
-      headStyles: { fillColor: col, textColor: [15, 15, 15], fontStyle: 'bold', halign: 'right' },
-      footStyles: { fillColor: [232, 236, 242], textColor: [20, 22, 28], fontStyle: 'bold', halign: 'right' },
-      bodyStyles: { halign: 'right' }, columnStyles: { 0: { halign: 'center', cellWidth: 18 }, 1: { halign: 'left', cellWidth: 140 } },
-      didParseCell: d => {
-        if (d.column.index === 1 && d.section !== 'body') d.cell.styles.halign = 'left';
-        if (d.section === 'body' && d.column.index === 7) { d.cell.styles.textColor = cumplColor(s.vens[d.row.index].cumpl); d.cell.styles.fontStyle = 'bold'; }
-        if (d.section === 'body' && d.column.index === 8) d.cell.styles.textColor = s.vens[d.row.index].facturacion >= s.vens[d.row.index].objetivo ? [0, 140, 110] : [200, 50, 50];
-      },
-    });
-  });
-  footer();
-  doc.save(`Resumen_mensual_${h.key}.pdf`);
+  const logo = (document.querySelector('header img') || {}).src || '';
+  const css = document.querySelector('style').textContent;
+  const extra = `
+    html{scroll-behavior:smooth} .rs-sec{margin-top:26px;scroll-margin-top:60px}
+    .rs-h2{display:flex;align-items:center;gap:9px;font-size:0.95rem;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;padding-bottom:8px;margin-bottom:12px;border-bottom:2px solid}
+    .rs-sub{font-family:'Roboto Mono',monospace;font-size:0.62rem;font-weight:400;color:var(--muted);letter-spacing:0;text-transform:none}
+    .rs-top{margin-left:auto;font-size:0.62rem;font-weight:600;color:var(--muted);text-decoration:none;letter-spacing:0;text-transform:none}
+    .rs-bars{margin-bottom:12px} .rs-bars .dvbar{height:34px} .rs-bars .dvseg b{font-size:0.62rem} .rs-bars .dvseg small{font-size:0.56rem}
+    .rs-leg{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:9px;font-family:'Roboto Mono',monospace;font-size:0.66rem;color:var(--muted)}
+    .rs-leg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+    a.rs-link{text-decoration:none;color:var(--text);display:block} a.rs-link:hover{background:var(--surface)}
+    a.sbtn{text-decoration:none;display:inline-flex;align-items:center}
+    .rs-warn{background:rgba(255,69,69,0.08);border:1px solid rgba(255,69,69,0.35);color:#ff8a8a;border-radius:9px;padding:9px 12px;font-size:0.72rem;margin-bottom:12px}
+    td .dvbar{min-width:120px}
+    .rs-sec .kstrip{grid-template-columns:repeat(6,1fr)}
+    @media(max-width:900px){.rs-sec .kstrip{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:600px){.rs-sec .kstrip{grid-template-columns:repeat(2,1fr)} .finfo{white-space:normal}}
+    @media print{.supbar{display:none} .rs-sec{break-before:page} *{-webkit-print-color-adjust:exact;print-color-adjust:exact}}`;
+  const navBtns = `<a class="sbtn" href="#top" style="background:var(--text);color:#000;border-color:transparent">🏢 Empresa</a>` + R.sups.map(s => `<a class="sbtn" href="#sup-${s.sup.replace(/\s+/g, '-')}" style="color:${sc(s.sup)}">● ${esc(sl(s.sup))}</a>`).join('');
+  const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resumen ${esc(mesCap)} · Ventas RAP</title>
+<style>${css}${extra}</style></head>
+<body id="top">
+<header>
+  <div class="logo" style="display:flex;align-items:center;gap:10px;padding:0">
+    ${logo ? `<img src="${logo}" style="height:38px;border-radius:5px" alt="RAP">` : ''}
+    <span style="font-family:'Roboto',sans-serif;font-size:0.85rem;font-weight:800;letter-spacing:0.04em;line-height:1.1;color:var(--text)">RESUMEN MENSUAL<br><span style="color:var(--accent)">${esc(mesCap.toUpperCase())}</span></span>
+  </div>
+  <div class="hright"><span class="finfo ok">📅 Período ${esc(per)} · generado ${esc(gen)}</span></div>
+</header>
+<div class="supbar">${navBtns}</div>
+<main>
+  <section class="rs-sec" style="margin-top:6px">
+    <div class="rs-h2" style="color:var(--accent);border-color:var(--accent)">🏢 Empresa total<span class="rs-sub">${R.tot.n} vendedores · ${R.sups.length} supervisores</span></div>
+    ${R.fp ? '' : '<div class="rs-warn">Cuenta corriente / contado: sin dato para este mes. Falta correr el cierre del mes con chess_sync actualizado.</div>'}
+    ${kpiStrip(R.tot, true)}${barras(R.tot)}
+    <div class="panel" style="margin-bottom:12px"><div class="ptitle"><span class="dot"></span>Resumen por supervisor</div>${supTable}</div>
+    <div class="sgrid">${supCards}</div>
+  </section>
+  ${supBlocks}
+  <div style="color:var(--muted);font-size:0.62rem;margin:24px 0 8px;line-height:1.6">
+    Facturación neta (sin conceptos ni combos, notas de crédito restan) · Mes cerrado: proyección = facturación final · Cumplimiento = facturado / objetivo ·
+    Cobertura prom. = promedio de los vendedores; CCC/Cartera = suma de CCC / suma de cartera · SKU = artículos distintos (sin proveedores excluidos) ·
+    Cobro con la escala de la columna L · Sin vendedores "sin supervisor" · Fuentes: API ChessERP, objetivos y días del panel admin.
+  </div>
+</main>
+</body></html>`;
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `Resumen_${h.key}_${mesNom}.html`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (err) { console.error('Resumen mensual:', err); alert('Error al generar el resumen: ' + err.message); }
 }
 
 autoLoadFromServer();
