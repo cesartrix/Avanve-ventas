@@ -230,6 +230,7 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'Roboto Mono',monospace;
 .hst-tbl .rank{color:var(--muted);width:24px;}
 .hst-month-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
 .hst-mtab{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:'Roboto Mono',monospace;font-size:0.65rem;cursor:pointer;transition:all 0.15s;}
+.hst-resumen-btn{margin-left:auto;padding:5px 12px;border-radius:6px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-family:'Roboto',sans-serif;font-size:0.72rem;font-weight:700;cursor:pointer;}.hst-resumen-btn:hover{background:var(--accent);color:#0a0b0f;}
 .hst-mtab.active{background:var(--accent);color:#0a0b0f;border-color:var(--accent);font-weight:700;}
 .hst-full{grid-column:1/-1;}
 .hst-vendor-row{cursor:pointer;transition:background 0.15s;}
@@ -1942,7 +1943,7 @@ function buildHistorico() {
   // Build month tabs
   tabsEl.innerHTML = window.HIST.map((h,i) =>
     `<button class="hst-mtab${i===window.HIST.length-1?' active':''}" onclick="renderHist(${i},this)">${h.mes}</button>`
-  ).join('');
+  ).join('') + `<button class="hst-resumen-btn" onclick="exportResumenMensual(window.HIST_IDX)" title="Resumen del mes seleccionado: empresa, supervisores y vendedores">⬇ Resumen del mes (PDF)</button>`;
 
   renderHist(window.HIST.length - 1, tabsEl.lastElementChild);
 }
@@ -1965,6 +1966,7 @@ function renderHist(idx, btn) {
   if (btn) btn.classList.add('active');
   const h = window.HIST[idx];
   if (!h) return;
+  window.HIST_IDX = idx;
   const gridEl = document.getElementById('hst-grid');
   const vens = h.vendedores;
   const totalObj = vens.reduce((s,x)=>s+x.objetivo,0);
@@ -2839,6 +2841,202 @@ function skuGrupoHist(h, g) {
   }
   const c = g.filter(x => x.cantidad_sku != null);
   return { v: c.length ? Math.round(c.reduce((a, x) => a + x.cantidad_sku, 0) / c.length) : null, exacto: false };
+}
+
+// ===== RESUMEN MENSUAL (PDF) — pestaña Histórico =====
+// Mes cerrado: empresa total → por supervisor → por vendedor. Datos del mes del Histórico (h.vendedores)
+// + data/chess_api_mensual/AAAA-MM.json (cta cte / contado, día de visita, SKU del grupo)
+// + objetivos y horas del admin + días de trabajo del admin.
+function resumenMensualDatos(h) {
+  const M = (window.MENSUAL || {})[h.key] || {};
+  const objs = (window.OBJ_CFG || {})[h.key] || {};
+  const fp = M.fact_pago || null;
+  const dv = M.dia_visita || {};
+  const horasBy = {}; (objs.horas || []).forEach(x => { if (+x.horas > 0) horasBy[String(x.codigo)] = +x.horas; });
+  const vens = h.vendedores.filter(x => x.supervisor && x.supervisor !== 'SIN SUPERVISOR').map(x => {
+    const p = fp ? (fp[x.codigo] || {}) : null;
+    const proy = x.proyeccion || x.facturacion;
+    const y = { ...x, proyeccion: proy };
+    y.cumpl = x.objetivo > 0 ? proy / x.objetivo * 100 : 0;
+    y.cobro = Math.round(calcCobro(y));
+    y.cta = p ? (+p.cta_cte || 0) : null;
+    y.cont = p ? (+p.contado || 0) : null;
+    y.otro = p ? (+p.otro || 0) : null;
+    y.horas = horasBy[x.codigo] ?? null;
+    y.dv = dv[x.codigo] || null;
+    y.nombre = getCurName(x.codigo) || x.nombre;
+    return y;
+  });
+  const agg = g => {
+    const s = (k) => g.reduce((a, x) => a + (+x[k] || 0), 0);
+    const conCov = g.filter(x => x.cartera);
+    const ccc = conCov.reduce((a, x) => a + (+x.ccc || 0), 0), car = conCov.reduce((a, x) => a + (+x.cartera || 0), 0);
+    const dvs = g.filter(x => x.dv).map(x => x.dv);
+    const dvt = { LUJU: 0, MAVI: 0, MISA: 0, total: 0 }; dvs.forEach(d => ['LUJU', 'MAVI', 'MISA', 'total'].forEach(k => dvt[k] += +d[k] || 0));
+    const hs = g.filter(x => x.horas != null);
+    return {
+      n: g.length, objetivo: s('objetivo'), facturacion: s('facturacion'), proyeccion: s('proyeccion'), cobro: s('cobro'),
+      cta: fp ? s('cta') : null, cont: fp ? s('cont') : null, otro: fp ? s('otro') : null,
+      ccc, cartera: car, cobertura: car ? ccc / car * 100 : null,
+      enObj: g.filter(x => x.cumpl >= 100).length,
+      dv: dvt.total ? dvt : null,
+      horas: hs.length ? hs.reduce((a, x) => a + x.horas, 0) / hs.length : null,
+    };
+  };
+  const sups = SUPS.filter(s => s !== 'SIN SUPERVISOR' && vens.some(x => x.supervisor === s)).map(s => {
+    const g = vens.filter(x => x.supervisor === s);
+    const t = agg(g);
+    t.sku = skuGrupoHist(h, g);
+    return { sup: s, vens: g.slice().sort((a, b) => b.cumpl - a.cumpl), t };
+  });
+  const tot = agg(vens);
+  tot.sku = h.skuGeneral != null ? { v: h.skuGeneral, exacto: true } : skuGrupoHist(h, vens);
+  const diasLista = (window.DIAS_CFG || {})[h.key];
+  const dias = Array.isArray(diasLista) ? diasLista.length : null;
+  return { h, M, fp, vens, sups, tot, dias, periodo: M.periodo || null };
+}
+
+function exportResumenMensual(idx) {
+  const h = window.HIST && window.HIST[idx];
+  if (!h) return;
+  if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) { alert('No se pudo cargar la librería de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
+  const R = resumenMensualDatos(h);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), mx = 32;
+  const mesNom = MESES_TXT[+h.key.slice(5) - 1];
+  const titulo = 'Resumen mensual · ' + mesNom.charAt(0).toUpperCase() + mesNom.slice(1) + ' ' + h.key.slice(0, 4);
+  const $ = v => v == null ? '—' : (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString('es-AR');
+  const pct = (v, d = 1) => v == null || !isFinite(v) ? '—' : v.toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d }) + '%';
+  const num = v => v == null ? '—' : Math.round(v).toLocaleString('es-AR');
+  const hhmm = v => v == null ? '—' : Math.floor(v) + ':' + String(Math.round((v % 1) * 60)).padStart(2, '0');
+  const part = (a, t) => (a == null || !t) ? null : a / t * 100;
+  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const cumplColor = c => c >= 100 ? [0, 140, 110] : c >= 90 ? [190, 130, 0] : [200, 50, 50];
+  const dvTxt = d => d && d.total ? ['LUJU', 'MAVI', 'MISA'].map(k => Math.round(d[k] / d.total * 100)).join(' / ') : '—';
+  const gen = new Date().toLocaleString('es-AR', { hour12: false }).slice(0, -3);
+  const per = R.periodo ? `${R.periodo.desde.split('-').reverse().join('/')} al ${R.periodo.hasta.split('-').reverse().join('/')}` : mesNom;
+
+  const header = (sub) => {
+    doc.setFillColor(17, 19, 24); doc.rect(0, 0, W, 54, 'F');
+    doc.setFillColor(0, 212, 170); doc.rect(0, 54, W, 3, 'F');
+    doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(17);
+    doc.text(titulo, mx, 26);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(190, 195, 205);
+    doc.text(`RAP · Período ${per}` + (sub ? '  ·  ' + sub : ''), mx, 43);
+  };
+  const footer = () => {
+    const n = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= n; i++) {
+      doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(130, 130, 130); doc.setFont('helvetica', 'normal');
+      doc.text(`${titulo} · generado ${gen}`, mx, H - 14);
+      doc.text(`Página ${i} de ${n}`, W - mx, H - 14, { align: 'right' });
+    }
+  };
+  // Tarjetas de KPI: [label, valor, sub, color?]
+  const cards = (y, items, cols) => {
+    const gap = 8, cw = (W - 2 * mx - gap * (cols - 1)) / cols, ch = 50;
+    items.forEach((it, i) => {
+      const x = mx + (i % cols) * (cw + gap), yy = y + Math.floor(i / cols) * (ch + gap);
+      doc.setFillColor(245, 247, 250); doc.setDrawColor(222, 226, 233); doc.roundedRect(x, yy, cw, ch, 4, 4, 'FD');
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(110, 116, 130);
+      doc.text(it[0].toUpperCase(), x + 8, yy + 13);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(12.5); doc.setTextColor(...(it[3] || [20, 22, 28]));
+      doc.text(String(it[1]), x + 8, yy + 31, { maxWidth: cw - 14 });
+      if (it[2]) { doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(120, 124, 135); doc.text(String(it[2]), x + 8, yy + 43, { maxWidth: cw - 14 }); }
+    });
+    return y + Math.ceil(items.length / cols) * (ch + gap);
+  };
+  const kpis = (t, conDias) => {
+    const c = t.objetivo ? t.proyeccion / t.objetivo * 100 : null;
+    const it = [
+      ['Objetivo', $(t.objetivo), `${t.n} vendedores`],
+      ['Facturado', $(t.facturacion), 'neto, sin conceptos ni combos'],
+      ['Cumplimiento', pct(c), `${t.enObj} de ${t.n} en objetivo`, c != null ? cumplColor(c) : null],
+      ['Diferencia vs objetivo', $(t.facturacion - t.objetivo), null, t.facturacion >= t.objetivo ? [0, 140, 110] : [200, 50, 50]],
+      ['Cobro (comisión)', $(t.cobro), 'escala columna L'],
+      ['Cuenta corriente', $(t.cta), t.cta == null ? 'sin dato' : pct(part(t.cta, t.facturacion)) + ' del facturado'],
+      ['Contado', $(t.cont), t.cont == null ? 'sin dato' : pct(part(t.cont, t.facturacion)) + ' del facturado'],
+      ['Cobertura', pct(t.cobertura), t.cartera ? `${num(t.ccc)} CCC / ${num(t.cartera)} cartera` : null],
+      ['Cant. SKU', num(t.sku && t.sku.v), t.sku && t.sku.exacto ? 'artículos distintos' : 'promedio por vendedor'],
+      ['Día de visita', dvTxt(t.dv), 'LUJU / MAVI / MISA (% fact.)'],
+    ];
+    if (conDias) {
+      it.push(['Días trabajados', R.dias ?? '—', 'panel admin']);
+      it.push(['Venta media diaria', R.dias ? $(t.facturacion / R.dias) : '—', null]);
+      it.push(['Horas en ruta prom.', hhmm(t.horas), 'promedio por vendedor']);
+    } else {
+      it.push(['Horas en ruta prom.', hhmm(t.horas), 'promedio por vendedor']);
+    }
+    return it;
+  };
+  const tblStyles = { font: 'helvetica', fontSize: 7.8, cellPadding: { top: 3.5, bottom: 3.5, left: 4, right: 4 }, lineColor: [225, 228, 235], lineWidth: 0.4, textColor: [30, 32, 38] };
+
+  // ---------- Página 1: empresa ----------
+  header('Empresa total');
+  let y = 72;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(20, 22, 28);
+  doc.text('Empresa total', mx, y + 4); y += 12;
+  y = cards(y, kpis(R.tot, true), 5) + 4;
+  if (!R.fp) {
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(200, 50, 50);
+    doc.text('Cuenta corriente / contado sin dato para este mes: falta correr el cierre del mes con chess_sync actualizado.', mx, y); y += 10;
+  }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(20, 22, 28);
+  doc.text('Por supervisor', mx, y + 6); y += 12;
+  const supRow = (label, t, sku) => {
+    const c = t.objetivo ? t.proyeccion / t.objetivo * 100 : null;
+    return [label, t.n, $(t.objetivo), $(t.facturacion), $(t.cta), pct(part(t.cta, t.facturacion)), $(t.cont), pct(part(t.cont, t.facturacion)),
+      pct(c), `${t.enObj}/${t.n}`, pct(t.cobertura), num(sku && sku.v), $(t.cobro), dvTxt(t.dv)];
+  };
+  const supHead = [['Supervisor', 'Vend.', 'Objetivo', 'Facturado', 'Cta. cte.', '% CC', 'Contado', '% Cont.', 'Cumpl.', 'En obj.', 'Cobertura', 'SKU', 'Cobro', 'LU/MA/MI %']];
+  doc.autoTable({
+    startY: y, head: supHead,
+    body: R.sups.map(s => supRow(sl(s.sup), s.t, s.t.sku)),
+    foot: [supRow('Empresa', R.tot, R.tot.sku)],
+    theme: 'grid', styles: tblStyles, margin: { left: mx, right: mx },
+    headStyles: { fillColor: [17, 19, 24], textColor: 255, fontStyle: 'bold', halign: 'right' },
+    footStyles: { fillColor: [232, 236, 242], textColor: [20, 22, 28], fontStyle: 'bold', halign: 'right' },
+    columnStyles: { 0: { halign: 'left', fontStyle: 'bold' } }, bodyStyles: { halign: 'right' },
+    didParseCell: d => {
+      if (d.column.index === 0 && (d.section === 'head' || d.section === 'foot')) d.cell.styles.halign = 'left';
+      if (d.section === 'body' && d.column.index === 0) { const s = R.sups[d.row.index]; if (s) d.cell.styles.textColor = rgb(SC[s.sup]).map(v => Math.round(v * 0.75)); }
+      if (d.section === 'body' && d.column.index === 8) { const s = R.sups[d.row.index]; const c = s.t.objetivo ? s.t.proyeccion / s.t.objetivo * 100 : 0; d.cell.styles.textColor = cumplColor(c); d.cell.styles.fontStyle = 'bold'; }
+    },
+  });
+
+  // ---------- Una página por supervisor ----------
+  const venHead = [['#', 'Vendedor', 'Objetivo', 'Facturado', 'Cta. cte.', 'Contado', '% CC', 'Cumpl.', 'Dif. vs obj.', 'Cobertura', 'CCC / Cart.', 'SKU', 'Cobro', 'Horas', 'LU/MA/MI %']];
+  R.sups.forEach(s => {
+    doc.addPage();
+    header('Supervisor ' + sl(s.sup));
+    let yy = 72;
+    const col = rgb(SC[s.sup]);
+    doc.setFillColor(...col); doc.rect(mx, yy - 6, 5, 16, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(20, 22, 28);
+    doc.text(sl(s.sup), mx + 11, yy + 6); yy += 18;
+    yy = cards(yy, kpis(s.t, false), 6) + 4;
+    doc.autoTable({
+      startY: yy, head: venHead,
+      body: s.vens.map((x, i) => [i + 1, `${x.codigo} - ${x.nombre}`, $(x.objetivo), $(x.facturacion), $(x.cta), $(x.cont), pct(part(x.cta, x.facturacion), 0),
+        pct(x.cumpl), $(x.facturacion - x.objetivo), x.cartera ? pct(x.ccc / x.cartera * 100) : '—', x.cartera ? `${x.ccc} / ${x.cartera}` : '—',
+        num(x.cantidad_sku), x.cobro ? $(x.cobro) : '—', hhmm(x.horas), dvTxt(x.dv)]),
+      foot: [['', `Total ${sl(s.sup)}`, $(s.t.objetivo), $(s.t.facturacion), $(s.t.cta), $(s.t.cont), pct(part(s.t.cta, s.t.facturacion), 0),
+        pct(s.t.objetivo ? s.t.proyeccion / s.t.objetivo * 100 : null), $(s.t.facturacion - s.t.objetivo), pct(s.t.cobertura),
+        s.t.cartera ? `${num(s.t.ccc)} / ${num(s.t.cartera)}` : '—', num(s.t.sku && s.t.sku.v), $(s.t.cobro), hhmm(s.t.horas), dvTxt(s.t.dv)]],
+      theme: 'grid', styles: tblStyles, margin: { left: mx, right: mx, top: 70 },
+      headStyles: { fillColor: col, textColor: [15, 15, 15], fontStyle: 'bold', halign: 'right' },
+      footStyles: { fillColor: [232, 236, 242], textColor: [20, 22, 28], fontStyle: 'bold', halign: 'right' },
+      bodyStyles: { halign: 'right' }, columnStyles: { 0: { halign: 'center', cellWidth: 18 }, 1: { halign: 'left', cellWidth: 140 } },
+      didParseCell: d => {
+        if (d.column.index === 1 && d.section !== 'body') d.cell.styles.halign = 'left';
+        if (d.section === 'body' && d.column.index === 7) { d.cell.styles.textColor = cumplColor(s.vens[d.row.index].cumpl); d.cell.styles.fontStyle = 'bold'; }
+        if (d.section === 'body' && d.column.index === 8) d.cell.styles.textColor = s.vens[d.row.index].facturacion >= s.vens[d.row.index].objetivo ? [0, 140, 110] : [200, 50, 50];
+      },
+    });
+  });
+  footer();
+  doc.save(`Resumen_mensual_${h.key}.pdf`);
 }
 
 autoLoadFromServer();
