@@ -2983,6 +2983,90 @@ function exportResumenMensual(idx) {
 
   // ---- Detalle por vendedor, un bloque por supervisor ----
   const venHead = '<thead><tr><th>#</th><th>Vendedor</th><th>Día de Visita</th><th>Objetivo</th><th>Facturado</th><th>Cta. cte.</th><th>Contado</th><th>% Cta. cte.</th><th>Cumpl.</th><th>Dif. vs obj.</th><th>CCC/Cartera</th><th>Cobro</th><th>Cant. SKU</th><th>Horas</th><th>Estado</th></tr></thead>';
+  // ---- Cobertura y SKU (como las pestañas del tablero: clic en supervisor / vendedor → desglose por proveedor) ----
+  const CPm = R.M.cob_prov || null, provsTodos = R.M.cob_provs || [];
+  const artProv = R.M.art_prov || null, ARTS = h.arts || null;
+  const sid = s => s.replace(/\s+/g, '-');
+  const covCls = c => c >= 30 ? 'ph' : c >= 15 ? 'pm' : 'pl';
+  const covCol = c => c >= 30 ? '#00d4aa' : c >= 15 ? '#ffcc00' : '#ff4545';
+  const faltHtml = f => f == null ? '—' : `<span style="color:${f <= 0 ? 'var(--accent)' : f <= 10 ? 'var(--warn)' : 'var(--danger)'}">${f <= 0 ? '✓' : f.toFixed(1)}</span>`;
+  const covBar = (cob, txt) => `<div class="mbw"><div class="mbbg"><div class="mbf ${cob < 15 ? 'd' : ''}" style="width:${Math.min(cob * 3, 100)}%"></div></div><span>${txt}</span></div>`;
+  const empty = m => `<div class="rs-empty">${m}</div>`;
+  const provRow = (nombre, val, max, txt, col, tit) => `<div class="rs-prow"><div style="flex:1;min-width:0"><div class="rs-pn" title="${esc(nombre)}">${esc(nombre)}</div><div class="mbw" style="margin-top:4px"><div class="mbbg"><div class="mbf" style="width:${Math.max(3, val * 100 / (max || 1))}%;background:${col}"></div></div></div></div><div class="rs-pv" title="${tit}">${num(val)}</div><div class="rs-pp">${txt}</div></div>`;
+  const detTit = (cod, nombre, sup, nV) => `<div class="rs-dh">${cod ? `<span class="rs-cod">${esc(cod)}</span>` : ''}<span style="font-weight:700">${esc(nombre)}</span>${sup ? tag(sup) : ''}${nV ? `<span class="rs-cod">${nV} vendedores</span>` : ''}</div>`;
+  const cobDet = (cods, col) => {
+    if (!CPm) return empty('Sin datos de CCC por proveedor para este mes: falta correr el cierre del mes con chess_sync actualizado.');
+    let cartera = 0, conD = 0; const acc = {};
+    cods.forEach(c => { const d = CPm[c]; if (!d) return; conD++; cartera += +d.cartera || 0; Object.entries(d.provs || {}).forEach(([p, v]) => acc[p] = (acc[p] || 0) + v); });
+    if (!conD) return empty('Sin datos de CCC por proveedor.');
+    const con = Object.entries(acc).map(([p, v]) => ({ p, v })).filter(x => x.v > 0).sort((a, b) => b.v - a.v || a.p.localeCompare(b.p));
+    const sin = provsTodos.filter(p => !acc[p]);
+    return `<div class="rs-dres">${con.length} proveedores con compra · Cartera <b>${num(cartera)}</b> clientes</div>
+      <div class="rs-dcab"><span>Proveedor</span><span>CCC &nbsp;·&nbsp; % cartera</span></div>
+      ${con.map(x => provRow(x.p, x.v, con[0].v, cartera ? (x.v * 100 / cartera).toFixed(1) + '%' : '—', col, 'Clientes con compra (CCC)')).join('')}
+      ${sin.length ? `<details class="cob-zero"><summary>${sin.length} proveedores sin CCC</summary>${sin.map(p => `<div class="rs-zero">${esc(p)}</div>`).join('')}</details>` : ''}`;
+  };
+  const skuDet = (cods, col, grupo) => {
+    if (!ARTS || !artProv) return empty('Sin desglose de SKU por proveedor para este mes.');
+    const set = new Set(); cods.forEach(c => (ARTS[c] || []).forEach(a => set.add(String(a))));
+    const acc = {}; set.forEach(a => { const p = artProv[a] || 'SIN PROVEEDOR'; acc[p] = (acc[p] || 0) + 1; });
+    const l = Object.entries(acc).map(([p, v]) => ({ p, v })).sort((a, b) => b.v - a.v || a.p.localeCompare(b.p));
+    if (!l.length) return empty('Sin artículos vendidos.');
+    return `<div class="rs-dres">${l.length} proveedores · <b>${num(set.size)}</b> SKU${grupo ? ' (artículos distintos del grupo)' : ''}</div>
+      <div class="rs-dcab"><span>Proveedor</span><span>SKU &nbsp;·&nbsp; %</span></div>
+      ${l.map(x => provRow(x.p, x.v, l[0].v, (x.v * 100 / set.size).toFixed(0) + '%', col, 'Artículos distintos')).join('')}`;
+  };
+  const detBox = (id, items) => `<div id="${id}" data-def="G">${items.map(([k, html]) => `<div data-k="${esc(k)}"${k === 'G' ? '' : ' hidden'}>${html}</div>`).join('')}</div>`;
+  const sel = (box, k) => ` data-k="${esc(k)}" onclick="rsSel(this,'${box}','${esc(k)}')"`;
+  const covAgg = g => { const c = g.filter(x => x.cartera); const ccc = c.reduce((a, x) => a + (+x.ccc || 0), 0), car = c.reduce((a, x) => a + (+x.cartera || 0), 0);
+    return { ccc, car, avg: c.length ? c.reduce((a, x) => a + (+x.cobertura || 0), 0) / c.length : null, falt: c.reduce((a, x) => a + Math.max(0, +x.ccc_faltante || 0), 0), pct: car ? ccc / car * 100 : null, n: c.length }; };
+  const subRow = (label, a, k, box, colLabel) => `<tr class="sup-group-sum cob-click${k === 'G' ? ' sel' : ''}"${sel(box, k)} style="font-weight:700;background:#1a1d28">
+      <td style="color:${colLabel || '#ffffff'};font-weight:800">${esc(label)}</td>
+      <td style="color:${a.avg == null ? 'var(--muted)' : covCol(a.avg)};font-weight:800">${pc(a.avg)}</td>
+      <td style="color:#ffffff">${num(a.ccc)}</td><td style="color:#ffffff">${num(a.car)}</td>
+      <td style="color:${a.falt <= 0 ? 'var(--accent)' : 'var(--warn)'}">${a.falt <= 0 ? '✓' : a.falt.toFixed(1)}</td>
+      <td style="color:var(--accent)">${pc(a.pct)}</td></tr>`;
+  const cobHead = '<thead><tr><th>Vendedor</th><th>Cobertura</th><th>CCC</th><th>Cartera</th><th>CCC Falt. 85%</th><th>%</th></tr></thead>';
+  const bloque = (cobTabla, cobBox, skuTabla, skuBox, col) => `
+      <div class="rs-h3"><span class="dot" style="background:${col}"></span>Cobertura</div>
+      <div class="cob-split">
+        <div class="panel"><div class="ptitle"><span class="dot p"></span>Detalle cobertura <span class="rs-hint">clic en una fila → CCC por proveedor</span></div><div class="ts">${cobTabla}</div></div>
+        <div class="panel cob-detail-panel"><div class="ptitle"><span class="dot o"></span>CCC por proveedor</div>${cobBox}</div>
+      </div>
+      <div class="rs-h3"><span class="dot" style="background:${col}"></span>SKU</div>
+      <div class="cob-split">
+        <div class="panel"><div class="ptitle"><span class="dot"></span>Cantidad de SKU por vendedor <span class="rs-hint">clic en una fila → desglose por proveedor</span></div><div class="ts">${skuTabla}</div></div>
+        <div class="panel cob-detail-panel"><div class="ptitle"><span class="dot o"></span>Desglose por proveedor</div>${skuBox}</div>
+      </div>`;
+
+  // Supervisor: tabla de vendedores + desglose del grupo / de cada vendedor
+  const cobSkuSup = s => {
+    const col = sc(s.sup), id = sid(s.sup), cods = s.vens.map(x => x.codigo);
+    const bc = 'cob-' + id, bs = 'sku-' + id;
+    const hdr = (n, extra) => `<tr class="sup-group-hdr cob-click sel"${sel(n, 'G')}><td colspan="${extra ? 3 : 6}" style="color:${col};border-bottom-color:${col}"><span style="display:inline-flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>${extra ? '📊 ' : ''}${esc(sl(s.sup))}<span style="font-family:'Roboto Mono',monospace;font-size:0.6rem;font-weight:400;color:var(--muted)">${s.vens.length} vendedores</span></span></td>${extra || ''}</tr>`;
+    const cv = s.vens.filter(x => x.cartera).sort((a, b) => b.cobertura - a.cobertura);
+    const cobRows = cv.map(x => `<tr class="hst-vendor-row cob-click"${sel(bc, x.codigo)}><td class="nc"><span style="color:var(--muted);font-size:0.62rem;margin-right:4px">${esc(x.codigo)}</span>${esc(x.nombre)}</td><td class="${covCls(x.cobertura)}">${x.cobertura}%</td><td>${num(x.ccc)}</td><td>${num(x.cartera)}</td><td>${faltHtml(x.ccc_faltante)}</td><td>${covBar(x.cobertura, pc(x.ccc / x.cartera * 100))}</td></tr>`).join('');
+    const cobTabla = `<table>${cobHead}<tbody>${hdr(bc)}${cobRows}${subRow(sl(s.sup), covAgg(s.vens), 'G', bc)}</tbody></table>`;
+    const cobBox = detBox(bc, [['G', detTit('', 'Supervisor', s.sup, cods.length) + cobDet(cods, col)]].concat(cv.map(x => [x.codigo, detTit(x.codigo, x.nombre, s.sup) + cobDet([x.codigo], col)])));
+    const sv = s.vens.slice().sort((a, b) => (b.cantidad_sku || 0) - (a.cantidad_sku || 0));
+    const tot = `<td style="color:${col};border-bottom-color:${col};font-weight:800;font-family:'Roboto Mono',monospace">${num(s.t.sku && s.t.sku.v)}<div style="font-size:0.55rem;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">total grupo</div></td>`;
+    const skuRows = sv.map((x, i) => `<tr class="hst-vendor-row cob-click"${sel(bs, x.codigo)}><td style="color:var(--muted)">${i + 1}</td><td style="color:var(--muted);font-size:0.62rem">${i + 1}°</td><td class="nc"><span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:5px">${esc(x.codigo)}</span>${esc(x.nombre)}</td><td style="color:var(--text);font-weight:700">${num(x.cantidad_sku)}</td></tr>`).join('');
+    const skuTabla = `<table><thead><tr><th>#</th><th>Pos.</th><th>Vendedor</th><th>Cant. SKU</th></tr></thead><tbody>${hdr(bs, tot)}${skuRows}</tbody></table>`;
+    const skuBox = detBox(bs, [['G', detTit('', 'Supervisor ' + sl(s.sup), s.sup, cods.length) + skuDet(cods, col, true)]].concat(sv.map(x => [x.codigo, detTit(x.codigo, x.nombre, s.sup) + skuDet([x.codigo], col, false)])));
+    return bloque(cobTabla, cobBox, skuTabla, skuBox, col);
+  };
+
+  // Empresa: una fila por supervisor + total empresa
+  const cobSkuEmp = () => {
+    const col = '#00d4aa', all = R.vens.map(x => x.codigo), bc = 'cob-EMP', bs = 'sku-EMP';
+    const cobTabla = `<table>${cobHead.replace('<th>Vendedor</th>', '<th>Supervisor</th>')}<tbody>${R.sups.map(s => subRow(sl(s.sup), covAgg(s.vens), s.sup, bc, sc(s.sup))).join('')}${subRow('Empresa', covAgg(R.vens), 'G', bc)}</tbody></table>`;
+    const cobBox = detBox(bc, [['G', detTit('', 'Empresa', null, all.length) + cobDet(all, col)]].concat(R.sups.map(s => [s.sup, detTit('', 'Supervisor', s.sup, s.vens.length) + cobDet(s.vens.map(x => x.codigo), sc(s.sup))])));
+    const skuTabla = `<table><thead><tr><th>Supervisor</th><th>Vend.</th><th>SKU del grupo</th><th>Prom. por vendedor</th></tr></thead><tbody>${R.sups.map(s => { const c = s.vens.filter(x => x.cantidad_sku != null);
+      return `<tr class="hst-vendor-row cob-click"${sel(bs, s.sup)}><td class="nc" style="color:${sc(s.sup)}"><span style="width:8px;height:8px;border-radius:50%;background:${sc(s.sup)};display:inline-block;margin-right:6px"></span>${esc(sl(s.sup))}</td><td>${s.t.n}</td><td style="color:var(--text);font-weight:700">${num(s.t.sku && s.t.sku.v)}</td><td>${c.length ? num(c.reduce((a, x) => a + x.cantidad_sku, 0) / c.length) : '—'}</td></tr>`; }).join('')}
+      <tr class="sup-group-sum cob-click sel"${sel(bs, 'G')} style="font-weight:700;background:#1a1d28"><td style="color:#fff;font-weight:800">Empresa</td><td style="color:#fff">${R.tot.n}</td><td style="color:var(--accent)">${num(R.tot.sku && R.tot.sku.v)}</td><td style="color:#fff">${(() => { const c = R.vens.filter(x => x.cantidad_sku != null); return c.length ? num(c.reduce((a, x) => a + x.cantidad_sku, 0) / c.length) : '—'; })()}</td></tr></tbody></table>`;
+    const skuBox = detBox(bs, [['G', detTit('', 'Empresa', null, all.length) + skuDet(all, col, true)]].concat(R.sups.map(s => [s.sup, detTit('', 'Supervisor ' + sl(s.sup), s.sup, s.vens.length) + skuDet(s.vens.map(x => x.codigo), sc(s.sup), true)])));
+    return bloque(cobTabla, cobBox, skuTabla, skuBox, col);
+  };
   const supBlocks = R.sups.map(s => { const t = s.t, col = sc(s.sup), c = t.objetivo ? t.proyeccion / t.objetivo * 100 : 0;
     const rows = s.vens.map((x, i) => `<tr>
         <td style="color:var(--muted)">${i + 1}</td>
@@ -2999,6 +3083,7 @@ function exportResumenMensual(idx) {
       ${kpiStrip(t, false)}${barras(t)}
       <div class="panel"><div class="ptitle"><span class="dot" style="background:${col}"></span>Vendedores · ordenados por cumplimiento</div>
         <div class="ts"><table>${venHead}<tbody>${rows}${sum}</tbody></table></div></div>
+      ${cobSkuSup(s)}
     </section>`; }).join('');
 
   const logo = (document.querySelector('header img') || {}).src || '';
@@ -3015,6 +3100,23 @@ function exportResumenMensual(idx) {
     a.sbtn{text-decoration:none;display:inline-flex;align-items:center}
     .rs-warn{background:rgba(255,69,69,0.08);border:1px solid rgba(255,69,69,0.35);color:#ff8a8a;border-radius:9px;padding:9px 12px;font-size:0.72rem;margin-bottom:12px}
     td .dvbar{min-width:120px}
+    .rs-h3{display:flex;align-items:center;gap:7px;font-size:0.74rem;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--text);margin:18px 0 9px}
+    .rs-h3 .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+    .rs-hint{margin-left:auto;font-size:0.56rem;font-weight:400;letter-spacing:0;text-transform:none;color:var(--muted)}
+    .cob-split{margin-bottom:4px} .cob-split>*,.g2>*{min-width:0} .cob-detail-panel{--cob-sticky-top:112px}
+    @media(max-width:900px){.cob-split{grid-template-columns:minmax(0,1fr)}}
+    tr.cob-click.sel td{background:rgba(0,212,170,0.10)!important}
+    .rs-dh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+    .rs-cod{font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted)}
+    .rs-dres{font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted);margin-bottom:10px} .rs-dres b{color:var(--text)}
+    .rs-dcab{display:flex;justify-content:space-between;font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;padding:4px 0;border-bottom:1px solid var(--border)}
+    .rs-prow{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)}
+    .rs-pn{font-size:0.76rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rs-pv{font-family:'Roboto Mono',monospace;font-weight:700;color:var(--text);min-width:38px;text-align:right}
+    .rs-pp{font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);min-width:44px;text-align:right}
+    .rs-zero{font-size:0.7rem;color:var(--muted);padding:3px 0;border-bottom:1px solid var(--border)}
+    .rs-empty{text-align:center;color:var(--muted);padding:24px 10px;font-size:0.78rem}
+    [hidden]{display:none!important}
     .rs-sec .kstrip{grid-template-columns:repeat(6,1fr)}
     @media(max-width:900px){.rs-sec .kstrip{grid-template-columns:repeat(3,1fr)}}
     @media(max-width:600px){.rs-sec .kstrip{grid-template-columns:repeat(2,1fr)} .finfo{white-space:normal}}
@@ -3040,14 +3142,27 @@ function exportResumenMensual(idx) {
     ${kpiStrip(R.tot, true)}${barras(R.tot)}
     <div class="panel" style="margin-bottom:12px"><div class="ptitle"><span class="dot"></span>Resumen por supervisor</div>${supTable}</div>
     <div class="sgrid">${supCards}</div>
+    ${cobSkuEmp()}
   </section>
   ${supBlocks}
   <div style="color:var(--muted);font-size:0.62rem;margin:24px 0 8px;line-height:1.6">
     Facturación neta (sin conceptos ni combos, notas de crédito restan) · Mes cerrado: proyección = facturación final · Cumplimiento = facturado / objetivo ·
     Cobertura prom. = promedio de los vendedores; CCC/Cartera = suma de CCC / suma de cartera · SKU = artículos distintos (sin proveedores excluidos) ·
-    Cobro con la escala de la columna L · Sin vendedores "sin supervisor" · Fuentes: API ChessERP, objetivos y días del panel admin.
+    CCC por proveedor del grupo = suma de los CCC de sus vendedores · Cobro con la escala de la columna L · Sin vendedores "sin supervisor" · Fuentes: API ChessERP, objetivos y días del panel admin.
   </div>
 </main>
+<script>
+function rsSel(el, id, k) {
+  var box = document.getElementById(id); if (!box) return;
+  var def = box.getAttribute('data-def');
+  if (el.classList.contains('sel') && k !== def) k = def;
+  var t = el.closest('table');
+  t.querySelectorAll('.sel').forEach(function (r) { r.classList.remove('sel'); });
+  t.querySelectorAll('[data-k]').forEach(function (r) { if (r.getAttribute('data-k') === k) r.classList.add('sel'); });
+  [].forEach.call(box.children, function (d) { d.hidden = d.getAttribute('data-k') !== k; });
+  var p = box.closest('.cob-detail-panel'); if (p) p.scrollTop = 0;
+}
+<\/script>
 </body></html>`;
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
