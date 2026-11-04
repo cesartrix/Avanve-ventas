@@ -1575,9 +1575,9 @@ function renderSkuDetail(){
         <div class="mbw" style="margin-top:4px;"><div class="mbbg"><div class="mbf" style="width:${Math.max(4,d.cantidad*100/max)}%;background:${col}"></div></div></div>
       </div>
       <div style="font-family:'Roboto Mono',monospace;font-weight:700;color:var(--text);min-width:38px;text-align:right;">${d.cantidad}</div>
-      <div style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);min-width:38px;text-align:right;" title="${skuPctProv(d.cantidad, d.proveedor, cat).tit}">${skuPctProv(d.cantidad, d.proveedor, cat).txt}</div>
+      <div style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);min-width:44px;text-align:right;line-height:1.15" title="${skuPctProv(d.cantidad, d.proveedor, cat).tit}">${skuPctProv(d.cantidad, d.proveedor, cat).txt}${cat[d.proveedor] ? `<span style="display:block;font-size:0.52rem;opacity:.75">de ${cat[d.proveedor].toLocaleString('es-AR')}</span>` : ''}</div>
     </div>`).join('');
-  el.innerHTML = header + `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted)">${desglose.length} proveedores · <span style="color:var(--text);font-weight:700">${total}</span> SKU${esSup ? ' (artículos distintos del grupo)' : ''}</div></div><div>${rows}</div>`;
+  el.innerHTML = header + `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted)">${desglose.length} proveedores · <span style="color:var(--text);font-weight:700">${total}</span> SKU${esSup ? ' (artículos distintos del grupo)' : ''}</div></div><div style="display:flex;justify-content:space-between;font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;padding:4px 0;border-bottom:1px solid var(--border)"><span>Proveedor</span><span>SKU &nbsp;·&nbsp; % del proveedor</span></div><div>${rows}</div>`;
 }
 
 // Exporta a PDF el detalle de artículos por proveedor del vendedor seleccionado
