@@ -1459,6 +1459,21 @@ function skuDetalle(key){
     return { proveedor, cantidad: articulos.length, articulos };
   }).sort((x, y) => y.cantidad - x.cantidad || x.proveedor.localeCompare(y.proveedor, 'es'));
 }
+// Artículos de cada proveedor (para el % del desglose de SKU): disponibles para la venta del Excel
+// (Base SKU col AO marcados "SI", sin proveedores excluidos) + los vendidos que no estén en ese listado.
+// soldProv = {codigo de artículo: proveedor de la API}; manda el proveedor de la API si el artículo está en los dos.
+function skuCatalogoProv(soldProv){
+  const m = {};
+  (window.SKU_DISPONIBLES || []).forEach(a => { m[String(parseInt(a.codigo, 10))] = a.proveedor; });
+  Object.entries(soldProv || {}).forEach(([c, prov]) => { m[String(parseInt(c, 10))] = prov; });
+  const cnt = {};
+  Object.values(m).forEach(prov => { if (!skuProvExcluido(prov)) cnt[prov] = (cnt[prov] || 0) + 1; });
+  return cnt;
+}
+function skuPctProv(cant, prov, cat){
+  const t = cat[prov];
+  return t ? { txt: Math.round(cant * 100 / t) + '%', tit: `${cant} de ${t} artículos de ${prov}` } : { txt: '—', tit: 'Sin listado de artículos del proveedor' };
+}
 function skuTotalGrupo(vens){
   const det = window.SKU_PROV_DETAIL || {};
   const set = new Set();
@@ -1549,6 +1564,10 @@ function renderSkuDetail(){
   }
   const total = desglose.reduce((s,d) => s + d.cantidad, 0);
   const max = desglose[0].cantidad || 1;
+  // % = SKU vendidos del proveedor / artículos de ese proveedor
+  const soldProv = {};
+  Object.values(window.SKU_PROV_DETAIL || {}).forEach(l => (l || []).forEach(pr => (pr.articulos || []).forEach(a => { soldProv[a.codigo] = pr.proveedor; })));
+  const cat = skuCatalogoProv(soldProv);
   const rows = desglose.map(d => `
     <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
       <div style="flex:1;min-width:0;">
@@ -1556,7 +1575,7 @@ function renderSkuDetail(){
         <div class="mbw" style="margin-top:4px;"><div class="mbbg"><div class="mbf" style="width:${Math.max(4,d.cantidad*100/max)}%;background:${col}"></div></div></div>
       </div>
       <div style="font-family:'Roboto Mono',monospace;font-weight:700;color:var(--text);min-width:38px;text-align:right;">${d.cantidad}</div>
-      <div style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);min-width:38px;text-align:right;">${total?(d.cantidad*100/total).toFixed(0):0}%</div>
+      <div style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);min-width:38px;text-align:right;" title="${skuPctProv(d.cantidad, d.proveedor, cat).tit}">${skuPctProv(d.cantidad, d.proveedor, cat).txt}</div>
     </div>`).join('');
   el.innerHTML = header + `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted)">${desglose.length} proveedores · <span style="color:var(--text);font-weight:700">${total}</span> SKU${esSup ? ' (artículos distintos del grupo)' : ''}</div></div><div>${rows}</div>`;
 }
@@ -2986,6 +3005,7 @@ function exportResumenMensual(idx) {
   // ---- Cobertura y SKU (como las pestañas del tablero: clic en supervisor / vendedor → desglose por proveedor) ----
   const CPm = R.M.cob_prov || null, provsTodos = R.M.cob_provs || [];
   const artProv = R.M.art_prov || null, ARTS = h.arts || null;
+  const CAT = skuCatalogoProv(artProv);   // artículos de cada proveedor, para el % del desglose de SKU
   const sid = s => s.replace(/\s+/g, '-');
   const covCls = c => c >= 30 ? 'ph' : c >= 15 ? 'pm' : 'pl';
   const covCol = c => c >= 30 ? '#00d4aa' : c >= 15 ? '#ffcc00' : '#ff4545';
@@ -3013,8 +3033,8 @@ function exportResumenMensual(idx) {
     const l = Object.entries(acc).map(([p, v]) => ({ p, v })).sort((a, b) => b.v - a.v || a.p.localeCompare(b.p));
     if (!l.length) return empty('Sin artículos vendidos.');
     return `<div class="rs-dres">${l.length} proveedores · <b>${num(set.size)}</b> SKU${grupo ? ' (artículos distintos del grupo)' : ''}</div>
-      <div class="rs-dcab"><span>Proveedor</span><span>SKU &nbsp;·&nbsp; %</span></div>
-      ${l.map(x => provRow(x.p, x.v, l[0].v, (x.v * 100 / set.size).toFixed(0) + '%', col, 'Artículos distintos')).join('')}`;
+      <div class="rs-dcab"><span>Proveedor</span><span>SKU &nbsp;·&nbsp; % del proveedor</span></div>
+      ${l.map(x => { const q = skuPctProv(x.v, x.p, CAT); return provRow(x.p, x.v, l[0].v, `<span title="${esc(q.tit)}">${q.txt}${CAT[x.p] ? `<small class="rs-de">de ${num(CAT[x.p])}</small>` : ''}</span>`, col, 'Artículos distintos vendidos'); }).join('')}`;
   };
   const detBox = (id, items) => `<div id="${id}" data-def="G">${items.map(([k, html]) => `<div data-k="${esc(k)}"${k === 'G' ? '' : ' hidden'}>${html}</div>`).join('')}</div>`;
   const sel = (box, k) => ` data-k="${esc(k)}" onclick="rsSel(this,'${box}','${esc(k)}')"`;
@@ -3114,6 +3134,7 @@ function exportResumenMensual(idx) {
     .rs-pn{font-size:0.76rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .rs-pv{font-family:'Roboto Mono',monospace;font-weight:700;color:var(--text);min-width:38px;text-align:right}
     .rs-pp{font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);min-width:44px;text-align:right}
+    .rs-de{display:block;font-size:0.52rem;opacity:.75}
     .rs-zero{font-size:0.7rem;color:var(--muted);padding:3px 0;border-bottom:1px solid var(--border)}
     .rs-empty{text-align:center;color:var(--muted);padding:24px 10px;font-size:0.78rem}
     [hidden]{display:none!important}
@@ -3147,7 +3168,7 @@ function exportResumenMensual(idx) {
   ${supBlocks}
   <div style="color:var(--muted);font-size:0.62rem;margin:24px 0 8px;line-height:1.6">
     Facturación neta (sin conceptos ni combos, notas de crédito restan) · Mes cerrado: proyección = facturación final · Cumplimiento = facturado / objetivo ·
-    Cobertura prom. = promedio de los vendedores; CCC/Cartera = suma de CCC / suma de cartera · SKU = artículos distintos (sin proveedores excluidos) ·
+    Cobertura prom. = promedio de los vendedores; CCC/Cartera = suma de CCC / suma de cartera · SKU = artículos distintos (sin proveedores excluidos); % por proveedor = SKU vendidos / artículos del proveedor (disponibles del Excel + vendidos) ·
     CCC por proveedor del grupo = suma de los CCC de sus vendedores · Cobro con la escala de la columna L · Sin vendedores "sin supervisor" · Fuentes: API ChessERP, objetivos y días del panel admin.
   </div>
 </main>
