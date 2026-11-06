@@ -230,6 +230,10 @@ tbody td{padding:8px 9px;white-space:nowrap;font-family:'Roboto Mono',monospace;
 .hst-tbl .rank{color:var(--muted);width:24px;}
 .hst-month-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
 .hst-mtab{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:'Roboto Mono',monospace;font-size:0.65rem;cursor:pointer;transition:all 0.15s;}
+.prov-split{display:grid;grid-template-columns:minmax(0,0.85fr) minmax(0,1.35fr);gap:14px;align-items:start}
+@media(max-width:900px){.prov-split{grid-template-columns:minmax(0,1fr)}}
+.prov-nm{font-size:0.74rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+.prov-tb td,.prov-tb th{white-space:nowrap}
 .hst-resumen-btn{margin-left:auto;padding:5px 12px;border-radius:6px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-family:'Roboto',sans-serif;font-size:0.72rem;font-weight:700;cursor:pointer;}.hst-resumen-btn:hover{background:var(--accent);color:#0a0b0f;}
 .hst-mtab.active{background:var(--accent);color:#0a0b0f;border-color:var(--accent);font-weight:700;}
 .hst-full{grid-column:1/-1;}
@@ -389,6 +393,7 @@ tr.sup-group-sum td{
     <button class="stab" onclick="showSec('mapa',this)">🗺 Mapa</button>
     <button class="stab" onclick="showSec('historico',this)">📅 Histórico</button>
     <button class="stab" onclick="showSec('sku',this)">📦 SKU</button>
+    <button class="stab" onclick="showSec('proveedores',this)">🏭 Proveedores</button>
     <button class="stab" onclick="showSec('horas',this)">⏱ Horas</button>
     <button class="stab" onclick="showSec('trazabilidad',this)">📈 Trazabilidad</button>
     <button class="stab" onclick="showSec('ranking',this)">🏆 Ranking</button>
@@ -506,6 +511,19 @@ tr.sup-group-sum td{
         <div class="panel">
           <div class="ptitle"><span class="dot o"></span>Desglose por proveedor</div>
           <div id="sku-detail"><div style="text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">Elegí un vendedor de la tabla para ver el desglose de SKU por proveedor.</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="pg" id="pg-proveedores">
+      <div class="prov-split">
+        <div class="panel">
+          <div class="ptitle"><span class="dot"></span>Vendedores <span style="margin-left:auto;font-size:0.56rem;font-weight:400;letter-spacing:0;text-transform:none;color:var(--muted)">clic → sus proveedores</span></div>
+          <div class="searchbar"><input id="sprov" placeholder="🔍 Buscar vendedor..." oninput="renderProv()"></div>
+          <div class="ts"><table><thead><tr><th>Vendedor</th><th>Facturado</th><th title="Proveedores con venta">Prov.</th></tr></thead><tbody id="tb-prov"></tbody></table></div>
+        </div>
+        <div class="panel cob-detail-panel">
+          <div class="ptitle"><span class="dot o"></span>Facturación y PDV por proveedor</div>
+          <div id="prov-detail"></div>
         </div>
       </div>
     </div>
@@ -725,7 +743,7 @@ function buildData() {
   window.GRAND_TOTAL = { objetivo: conSup.reduce((a, x) => a + x.objetivo, 0), facturacion: 0, proyeccion: 0 };
 
   COB = [];
-  window.COB_PROV = {}; window.SKU_CUR = {}; window.SKU_TOTAL_EMPRESA = null;
+  window.COB_PROV = {}; window.FACT_PROV = null; window.SKU_CUR = {}; window.SKU_TOTAL_EMPRESA = null;
   window.SKU_PROV = {}; window.SKU_PROV_DETAIL = {}; window.DIA_VISITA = {}; window.ENTREGAS = null;
   applyChessApi();
 
@@ -829,6 +847,7 @@ function applyChessApi() {
     });
   }
   if (api.cob_prov) window.COB_PROV = api.cob_prov;
+  window.FACT_PROV = api.fact_prov || null;
   // ---- SKU ----
   if (api.sku_cur) { window.SKU_CUR = {}; Object.entries(api.sku_cur).forEach(([k, v]) => window.SKU_CUR[k] = { cantidad: v }); }
   if (api.sku_total_empresa != null) window.SKU_TOTAL_EMPRESA = api.sku_total_empresa;
@@ -1432,7 +1451,7 @@ function renderCobDetail(){
 function buildRanking(){const d=filt(A).sort((a,b)=>b.cumplimiento-a.cumplimiento);const m=['🥇','🥈','🥉','4️⃣','5️⃣'];document.getElementById('rtop').innerHTML=d.slice(0,5).map((x,i)=>`<div class="sr"><span class="sn">${m[i]} <span style="color:var(--muted);font-size:0.72rem">${x.codigo}</span> ${x.nombre} ${tag(x.supervisor,true)}</span><span class="sv">${x.cumplimiento}%</span></div>`).join('');document.getElementById('rbot').innerHTML=d.slice(-5).reverse().map(x=>`<div class="sr"><span class="sn" style="color:#ff4545"><span style="color:#ff454599;font-size:0.72rem">${x.codigo}</span> ${x.nombre} ${tag(x.supervisor,true)}</span><span style="font-family:'Roboto Mono',monospace;color:#ff4545">${x.cumplimiento}%</span></div>`).join('');}
 function buildSupCards(){document.getElementById('supcards').innerHTML=SUPS.map(s=>{const d=A.filter(x=>x.supervisor===s);if(!d.length)return'';const sub2=(window.SUP_SUBTOTALS||{})[s];const tf=sub2?sub2.facturacion:d.reduce((a,x)=>a+x.facturacion,0),to=sub2?sub2.objetivo:d.reduce((a,x)=>a+x.objetivo,0),tp2=sub2?sub2.proyeccion:d.reduce((a,x)=>a+x.proyeccion,0),avgC=(to>0?tp2/to*100:0).toFixed(1),ok=d.filter(x=>x.cumplimiento>=100).length,col=sc(s);return`<div class="scard" style="border-left-color:${col}"><div class="scnm" style="color:${col}">${sl(s)}</div><div class="scr"><span>Vendedores</span><span>${d.length}</span></div><div class="scr"><span>Facturado</span><span>${fmt(tf)}</span></div><div class="scr"><span>Objetivo</span><span>${fmt(to)}</span></div><div class="scr"><span>Cumpl. prom.</span><span style="color:${gc(+avgC)}">${avgC}%</span></div><div class="scr"><span>En objetivo</span><span style="color:#00d4aa">${ok}/${d.length}</span></div></div>`;}).join('');}
 
-function refresh(){buildKpiAv();buildKpiCob();buildCC();buildCF();buildCCob();buildCCCC();buildDist();buildCSF();buildCSC();renderAv();renderCob();buildRanking();buildSupCards();renderSku();renderEnt();if(typeof renderMapa==='function')renderMapa(false);}
+function refresh(){buildKpiAv();buildKpiCob();buildCC();buildCF();buildCCob();buildCCCC();buildDist();buildCSF();buildCSC();renderAv();renderCob();buildRanking();buildSupCards();renderSku();if(typeof renderProv==='function')renderProv();renderEnt();if(typeof renderMapa==='function')renderMapa(false);}
 
 // ===== SKU POR VENDEDOR / PROVEEDOR: UI =====
 // Cantidad de SKU de un grupo de vendedores: artículos distintos (unión).
@@ -2872,6 +2891,98 @@ function skuGrupoHist(h, g) {
   return { v: c.length ? Math.round(c.reduce((a, x) => a + x.cantidad_sku, 0) / c.length) : null, exacto: false };
 }
 
+// ===== PROVEEDORES: facturación y PDV (clientes con compra, CCC) por proveedor =====
+// fp = {vendedor: {proveedor: neto}} (fact_prov de la API); cp = {vendedor: {cartera, provs}} (cob_prov: lista o {prov: ccc}).
+// Grupo = suma de sus vendedores (mismo criterio que el CCC por proveedor de Cobertura).
+function provResumen(cods, fp, cp) {
+  const acc = {}; let cartera = 0, conCp = 0, conFp = 0;
+  const o = p => acc[p] = acc[p] || { f: 0, pdv: 0 };
+  cods.forEach(c => {
+    const f = fp && fp[c];
+    if (f) { conFp++; Object.entries(f).forEach(([p, v]) => { o(p).f += +v || 0; }); }
+    const d = cp && cp[c];
+    if (d) {
+      conCp++; cartera += +d.cartera || 0;
+      const lst = Array.isArray(d.provs) ? d.provs.map(x => [x.proveedor, x.ccc]) : Object.entries(d.provs || {});
+      lst.forEach(([p, n]) => { if (+n > 0) o(p).pdv += +n; });
+    }
+  });
+  const rows = Object.entries(acc).map(([p, x]) => ({ p, f: x.f, pdv: x.pdv }))
+    .filter(x => Math.abs(x.f) >= 0.5 || x.pdv > 0).sort((a, b) => b.f - a.f || b.pdv - a.pdv || a.p.localeCompare(b.p));
+  return { rows, tot: rows.reduce((a, x) => a + x.f, 0), cartera, hayF: conFp > 0, hayP: conCp > 0 };
+}
+function provTablaHtml(r, col, notaPdv) {
+  const e = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const fm = v => (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString('es-AR');
+  const n0 = v => Math.round(v).toLocaleString('es-AR');
+  if (!r.hayF) return `<div style="text-align:center;color:var(--muted);padding:28px 10px;font-size:0.78rem;">Sin facturación por proveedor para este período: falta que chess_sync (actualizado) vuelva a bajar los datos.</div>`;
+  if (!r.rows.length) return `<div style="text-align:center;color:var(--muted);padding:28px 10px;font-size:0.78rem;">Sin ventas.</div>`;
+  const max = Math.max(...r.rows.map(x => x.f), 1);
+  return `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted);margin-bottom:10px">${r.rows.length} proveedores · Facturado <b style="color:var(--text)">${fm(r.tot)}</b>${r.hayP ? ` · Cartera <b style="color:var(--text)">${n0(r.cartera)}</b> clientes` : ''}</div>
+  <div class="ts"><table class="prov-tb"><thead><tr><th>#</th><th>Proveedor</th><th>Facturado</th><th>% fact.</th><th title="Puntos de venta: clientes con compra del proveedor (CCC)">PDV</th><th title="PDV / cartera">% cartera</th><th title="Facturado / PDV">$ por PDV</th></tr></thead><tbody>
+  ${r.rows.map((x, i) => `<tr><td style="color:var(--muted)">${i + 1}</td>
+    <td class="nc" style="min-width:150px"><div class="prov-nm" title="${e(x.p)}">${e(x.p)}</div><div class="mbw" style="margin-top:4px"><div class="mbbg"><div class="mbf" style="width:${Math.max(2, Math.max(0, x.f) * 100 / max)}%;background:${col}"></div></div></div></td>
+    <td style="color:var(--text);font-weight:700">${fm(x.f)}</td><td>${r.tot ? (x.f * 100 / r.tot).toFixed(1) + '%' : '—'}</td>
+    <td style="color:var(--text);font-weight:700">${r.hayP ? n0(x.pdv) : '—'}</td><td>${r.hayP && r.cartera ? (x.pdv * 100 / r.cartera).toFixed(1) + '%' : '—'}</td>
+    <td>${x.pdv ? fm(x.f / x.pdv) : '—'}</td></tr>`).join('')}
+  <tr class="sup-group-sum"><td></td><td>Total</td><td>${fm(r.tot)}</td><td>100%</td><td colspan="3" style="color:var(--muted);font-weight:400;font-size:0.6rem">${notaPdv || 'PDV = clientes con compra del proveedor (CCC)'}</td></tr>
+  </tbody></table></div>`;
+}
+
+// Pestaña Proveedores del tablero
+let provSelected = null;
+function renderProv() {
+  const tbEl = document.getElementById('tb-prov');
+  if (!tbEl) return;
+  const q = (document.getElementById('sprov')?.value || '').toLowerCase();
+  const allBase = filt(A).filter(x => x.supervisor !== 'SIN SUPERVISOR');
+  const base = allBase.filter(x => x.nombre.toLowerCase().includes(q) || String(x.codigo).includes(q));
+  const FP = window.FACT_PROV || {};
+  const nProv = c => FP[c] ? Object.values(FP[c]).filter(v => Math.abs(v) >= 0.5).length : null;
+  const fm = v => '$' + Math.round(v || 0).toLocaleString('es-AR');
+  const def = cur === 'TODOS' ? 'E' : 'S:' + cur;
+  if (provSelected && provSelected !== 'E' && !provSelected.startsWith('S:') && !base.some(x => x.codigo === provSelected)) provSelected = null;
+  if (provSelected && provSelected.startsWith('S:') && !allBase.some(x => 'S:' + x.supervisor === provSelected)) provSelected = null;
+  if (provSelected === 'E' && cur !== 'TODOS') provSelected = null;
+  const selK = provSelected || def;
+  let rows = '';
+  if (cur === 'TODOS') {
+    const t = allBase.reduce((a, x) => a + (x.facturacion || 0), 0);
+    rows += `<tr class="sup-group-sum hst-vendor-row${selK === 'E' ? ' sel' : ''}" onclick="selectProv('E')" style="cursor:pointer"><td style="color:#fff;font-weight:800">🏢 Empresa</td><td style="color:#fff">${fm(t)}</td><td style="color:var(--muted)">${allBase.length} vend.</td></tr>`;
+  }
+  (cur === 'TODOS' ? [...SUPS] : [cur]).forEach(sup => {
+    const g = base.filter(x => x.supervisor === sup).sort((a, b) => (b.facturacion || 0) - (a.facturacion || 0));
+    if (!g.length) return;
+    const col = sc(sup), k = 'S:' + sup;
+    const tg = allBase.filter(x => x.supervisor === sup).reduce((a, x) => a + (x.facturacion || 0), 0);
+    rows += `<tr class="sup-group-hdr${selK === k ? ' sel' : ''}" onclick="selectProv('${k}')" style="cursor:pointer" title="Ver proveedores del supervisor"><td style="color:${col};border-bottom-color:${col}"><span style="display:inline-flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}</span></td><td style="color:${col};border-bottom-color:${col};font-family:'Roboto Mono',monospace">${fm(tg)}</td><td style="border-bottom-color:${col}"></td></tr>`;
+    g.forEach(x => {
+      rows += `<tr class="hst-vendor-row${selK === x.codigo ? ' sel' : ''}" onclick="selectProv('${x.codigo}')" title="Ver proveedores del vendedor" style="cursor:pointer">
+        <td class="nc"><span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:5px">${x.codigo}</span>${x.nombre}</td>
+        <td style="color:var(--text);font-weight:600">${fm(x.facturacion)}</td><td>${nProv(x.codigo) ?? '—'}</td></tr>`;
+    });
+  });
+  tbEl.innerHTML = rows;
+  renderProvDetail(selK, allBase);
+}
+function selectProv(k) {
+  provSelected = provSelected === k ? null : k;
+  renderProv();
+}
+function renderProvDetail(k, allBase) {
+  const el = document.getElementById('prov-detail');
+  if (!el) return;
+  let cods, titulo, col = '#00d4aa';
+  if (k === 'E') { cods = allBase.map(x => x.codigo); titulo = `<span style="font-weight:700">Empresa</span><span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted)">${cods.length} vendedores</span>`; }
+  else if (k.startsWith('S:')) { const sup = k.slice(2); cods = allBase.filter(x => x.supervisor === sup).map(x => x.codigo); col = sc(sup);
+    titulo = `<span style="font-weight:700">Supervisor ${sl(sup)}</span>${tag(sup)}<span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted)">${cods.length} vendedores</span>`; }
+  else { const x = allBase.find(v => v.codigo === k); if (!x) { el.innerHTML = ''; return; } cods = [k]; col = sc(x.supervisor);
+    titulo = `<span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted)">${x.codigo}</span><span style="font-weight:700">${x.nombre}</span>${tag(x.supervisor)}`; }
+  const per = window.CHESS_APPLIED && window.CHESS_API && window.CHESS_API.periodo ? window.CHESS_API.periodo : null;
+  const nota = per && per.ccc_hasta && per.ccc_hasta !== per.hasta ? `PDV = clientes con compra (CCC) hasta el ${per.ccc_hasta.slice(8, 10)}/${per.ccc_hasta.slice(5, 7)}, como Cobertura` : 'PDV = clientes con compra del proveedor (CCC)';
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">${titulo}</div>` + provTablaHtml(provResumen(cods, window.FACT_PROV, window.COB_PROV), col, nota);
+}
+
 // ===== RESUMEN MENSUAL (HTML descargable) — pestaña Histórico =====
 // Mes cerrado: empresa total → por supervisor → por vendedor. Datos del mes del Histórico (h.vendedores)
 // + data/chess_api_mensual/AAAA-MM.json (cta cte / contado, día de visita, SKU del grupo)
@@ -3059,6 +3170,16 @@ function exportResumenMensual(idx) {
         <div class="panel cob-detail-panel"><div class="ptitle"><span class="dot o"></span>Desglose por proveedor</div>${skuBox}</div>
       </div>`;
 
+  // Proveedores: facturado y PDV por proveedor (fact_prov + cob_prov del mes)
+  const FPm = R.M.fact_prov || null;
+  const provHtml = (cods, col) => provTablaHtml(provResumen(cods, FPm, CPm), col, 'PDV = clientes con compra del proveedor en el mes (CCC)');
+  const nProvM = c => FPm && FPm[c] ? Object.values(FPm[c]).filter(v => Math.abs(v) >= 0.5).length : null;
+  const provBloque = (tabla, box, col) => `
+      <div class="rs-h3"><span class="dot" style="background:${col}"></span>Proveedores</div>
+      <div class="prov-split">
+        <div class="panel"><div class="ptitle"><span class="dot"></span>${tabla[0]} <span class="rs-hint">clic en una fila → sus proveedores</span></div><div class="ts">${tabla[1]}</div></div>
+        <div class="panel cob-detail-panel"><div class="ptitle"><span class="dot o"></span>Facturación y PDV por proveedor</div>${box}</div>
+      </div>`;
   // Supervisor: tabla de vendedores + desglose del grupo / de cada vendedor
   const cobSkuSup = s => {
     const col = sc(s.sup), id = sid(s.sup), cods = s.vens.map(x => x.codigo);
@@ -3073,7 +3194,12 @@ function exportResumenMensual(idx) {
     const skuRows = sv.map((x, i) => `<tr class="hst-vendor-row cob-click"${sel(bs, x.codigo)}><td style="color:var(--muted)">${i + 1}</td><td style="color:var(--muted);font-size:0.62rem">${i + 1}°</td><td class="nc"><span style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);margin-right:5px">${esc(x.codigo)}</span>${esc(x.nombre)}</td><td style="color:var(--text);font-weight:700">${num(x.cantidad_sku)}</td></tr>`).join('');
     const skuTabla = `<table><thead><tr><th>#</th><th>Pos.</th><th>Vendedor</th><th>Cant. SKU</th></tr></thead><tbody>${hdr(bs, tot)}${skuRows}</tbody></table>`;
     const skuBox = detBox(bs, [['G', detTit('', 'Supervisor ' + sl(s.sup), s.sup, cods.length) + skuDet(cods, col, true)]].concat(sv.map(x => [x.codigo, detTit(x.codigo, x.nombre, s.sup) + skuDet([x.codigo], col, false)])));
-    return bloque(cobTabla, cobBox, skuTabla, skuBox, col);
+    const bp = 'prov-' + id, pv = s.vens.slice().sort((a, b) => (b.facturacion || 0) - (a.facturacion || 0));
+    const provTabla = `<table><thead><tr><th>Vendedor</th><th>Facturado</th><th>Prov.</th></tr></thead><tbody>
+      <tr class="sup-group-hdr cob-click sel"${sel(bp, 'G')}><td style="color:${col};border-bottom-color:${col}">${esc(sl(s.sup))}</td><td style="color:${col};border-bottom-color:${col}">${$(s.t.facturacion)}</td><td style="border-bottom-color:${col}"></td></tr>
+      ${pv.map(x => `<tr class="hst-vendor-row cob-click"${sel(bp, x.codigo)}><td class="nc"><span class="rs-cod" style="margin-right:5px">${esc(x.codigo)}</span>${esc(x.nombre)}</td><td>${$(x.facturacion)}</td><td>${nProvM(x.codigo) ?? '—'}</td></tr>`).join('')}</tbody></table>`;
+    const provBox = detBox(bp, [['G', detTit('', 'Supervisor ' + sl(s.sup), s.sup, cods.length) + provHtml(cods, col)]].concat(pv.map(x => [x.codigo, detTit(x.codigo, x.nombre, s.sup) + provHtml([x.codigo], col)])));
+    return bloque(cobTabla, cobBox, skuTabla, skuBox, col) + provBloque(['Vendedores', provTabla], provBox, col);
   };
 
   // Empresa: una fila por supervisor + total empresa
@@ -3085,7 +3211,12 @@ function exportResumenMensual(idx) {
       return `<tr class="hst-vendor-row cob-click"${sel(bs, s.sup)}><td class="nc" style="color:${sc(s.sup)}"><span style="width:8px;height:8px;border-radius:50%;background:${sc(s.sup)};display:inline-block;margin-right:6px"></span>${esc(sl(s.sup))}</td><td>${s.t.n}</td><td style="color:var(--text);font-weight:700">${num(s.t.sku && s.t.sku.v)}</td><td>${c.length ? num(c.reduce((a, x) => a + x.cantidad_sku, 0) / c.length) : '—'}</td></tr>`; }).join('')}
       <tr class="sup-group-sum cob-click sel"${sel(bs, 'G')} style="font-weight:700;background:#1a1d28"><td style="color:#fff;font-weight:800">Empresa</td><td style="color:#fff">${R.tot.n}</td><td style="color:var(--accent)">${num(R.tot.sku && R.tot.sku.v)}</td><td style="color:#fff">${(() => { const c = R.vens.filter(x => x.cantidad_sku != null); return c.length ? num(c.reduce((a, x) => a + x.cantidad_sku, 0) / c.length) : '—'; })()}</td></tr></tbody></table>`;
     const skuBox = detBox(bs, [['G', detTit('', 'Empresa', null, all.length) + skuDet(all, col, true)]].concat(R.sups.map(s => [s.sup, detTit('', 'Supervisor ' + sl(s.sup), s.sup, s.vens.length) + skuDet(s.vens.map(x => x.codigo), sc(s.sup), true)])));
-    return bloque(cobTabla, cobBox, skuTabla, skuBox, col);
+    const bp = 'prov-EMP';
+    const provTabla = `<table><thead><tr><th>Supervisor</th><th>Facturado</th><th>Vend.</th></tr></thead><tbody>
+      ${R.sups.map(s => `<tr class="hst-vendor-row cob-click"${sel(bp, s.sup)}><td class="nc" style="color:${sc(s.sup)}"><span style="width:8px;height:8px;border-radius:50%;background:${sc(s.sup)};display:inline-block;margin-right:6px"></span>${esc(sl(s.sup))}</td><td>${$(s.t.facturacion)}</td><td>${s.t.n}</td></tr>`).join('')}
+      <tr class="sup-group-sum cob-click sel"${sel(bp, 'G')} style="font-weight:700;background:#1a1d28"><td style="color:#fff;font-weight:800">Empresa</td><td style="color:var(--accent)">${$(R.tot.facturacion)}</td><td style="color:#fff">${R.tot.n}</td></tr></tbody></table>`;
+    const provBox = detBox(bp, [['G', detTit('', 'Empresa', null, all.length) + provHtml(all, col)]].concat(R.sups.map(s => [s.sup, detTit('', 'Supervisor ' + sl(s.sup), s.sup, s.vens.length) + provHtml(s.vens.map(x => x.codigo), sc(s.sup))])));
+    return bloque(cobTabla, cobBox, skuTabla, skuBox, col) + provBloque(['Por supervisor', provTabla], provBox, col);
   };
   const supBlocks = R.sups.map(s => { const t = s.t, col = sc(s.sup), c = t.objetivo ? t.proyeccion / t.objetivo * 100 : 0;
     const rows = s.vens.map((x, i) => `<tr>
@@ -3169,7 +3300,7 @@ function exportResumenMensual(idx) {
   <div style="color:var(--muted);font-size:0.62rem;margin:24px 0 8px;line-height:1.6">
     Facturación neta (sin conceptos ni combos, notas de crédito restan) · Mes cerrado: proyección = facturación final · Cumplimiento = facturado / objetivo ·
     Cobertura prom. = promedio de los vendedores; CCC/Cartera = suma de CCC / suma de cartera · SKU = artículos distintos (sin proveedores excluidos); % por proveedor = SKU vendidos / artículos del proveedor (disponibles del Excel + vendidos) ·
-    CCC por proveedor del grupo = suma de los CCC de sus vendedores · Cobro con la escala de la columna L · Sin vendedores "sin supervisor" · Fuentes: API ChessERP, objetivos y días del panel admin.
+    CCC por proveedor y PDV del grupo = suma de los de sus vendedores; facturado por proveedor con la misma regla que la facturación · Cobro con la escala de la columna L · Sin vendedores "sin supervisor" · Fuentes: API ChessERP, objetivos y días del panel admin.
   </div>
 </main>
 <script>
