@@ -1415,6 +1415,13 @@ function renderEntDetail() {
 // se descuentan primero de lo vencido), nunca menos de 0.
 window.SALDOS = null;
 let ccSel = null, ccEmp = 'TODAS';
+// Orden del panel de clientes: campo (saldo | vencido | mora) y dirección (-1 = mayor a menor)
+let ccOrd = { k: 'saldo', dir: -1 };
+function ccSetOrd(k) {
+  ccOrd = ccOrd.k === k ? { k, dir: -ccOrd.dir } : { k, dir: -1 };
+  const base = (ccData() || {}).rows;
+  if (base) renderCcDetail(base);
+}
 const CC_AGE = [
   { k: 'av', l: 'A vencer', c: '#00d4aa' },
   { k: 'a1', l: '1-30 días', c: '#ffcc00' },
@@ -1570,10 +1577,13 @@ function renderCcDetail(base) {
   const dF = d => d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(2, 4) : '—';
   const header = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;"><span style="font-family:'Roboto Mono',monospace;font-size:0.65rem;color:var(--muted)">${v.codigo}</span><span style="font-weight:700">${h(v.nombre)}</span>${tag(v.supervisor)}</div>`;
   const resumen = `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted)">Saldo deudor <span style="color:var(--text);font-weight:700">${fmt(v.saldo)}</span> · <span style="color:var(--danger)">${fmt(v.vencido)} vencido</span> · ${v.clientes} clientes</div>`;
-  const deudores = v.lista.filter(c => c.saldo > 0.5);
+  const deudores = v.lista.filter(c => c.saldo > 0.5)
+    .sort((a, b) => ccOrd.dir * ((a[ccOrd.k] - b[ccOrd.k]) || (a.saldo - b.saldo)));
   const aFavor = v.lista.filter(c => c.saldo < -0.5);
   if (!deudores.length) { el.innerHTML = header + resumen + empty('No tiene clientes con saldo deudor.'); return; }
   const max = Math.max(...deudores.map(c => c.saldo), 1);
+  const ordBtn = (k, l) => `<button class="${ccOrd.k === k ? 'on' : ''}" onclick="ccSetOrd('${k}')" title="${ccOrd.k === k ? 'Invertir el orden' : 'Ordenar por ' + l.toLowerCase()}">${l}${ccOrd.k === k ? (ccOrd.dir < 0 ? ' ↓' : ' ↑') : ''}</button>`;
+  const orden = `<div class="cc-emp" style="align-items:center;margin:4px 0 6px"><span style="font-family:'Roboto Mono',monospace;font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-right:2px">Ordenar por</span>${ordBtn('saldo', 'Saldo')}${ordBtn('vencido', 'Vencido')}${ordBtn('mora', 'Días de mora')}</div>`;
   const cab = `<div style="display:flex;justify-content:space-between;font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;padding:4px 0;border-bottom:1px solid var(--border)"><span>Cliente · tocá para ver comprobantes</span><span>Saldo / vencido</span></div>`;
   const filas = deudores.map(c => `<details class="cc-cli"><summary>
       <div style="flex:1;min-width:0;">
@@ -1588,7 +1598,7 @@ function renderCcDetail(base) {
       <table class="cc-cps"><colgroup><col><col class="cf ccf"><col class="cf"><col class="cm"><col class="cs"></colgroup><thead><tr><th>Comprobante</th><th class="ccf">Fecha</th><th>Vto.</th><th class="r">Mora</th><th class="r">Saldo</th></tr></thead><tbody>${c.cps.map(x => `<tr><td title="${h(x.nro)}">${h(x.t || x.nro)}${x.t && x.nro ? ` <span style="color:var(--muted)">${h(x.nro.split(' ').pop())}</span>` : ''}</td><td class="ccf">${dF(x.f)}</td><td>${dF(x.fv)}</td><td class="r" style="color:${x.ve && x.s > 0 ? 'var(--danger)' : 'var(--muted)'}">${x.ve ? x.d + ' d' : '—'}</td><td class="r" style="color:${x.s < 0 ? 'var(--accent)' : 'var(--text)'}">${fmt(x.s)}</td></tr>`).join('')}</tbody></table>
     </details>`).join('');
   const pie = aFavor.length ? `<div style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);padding:8px 0">${aFavor.length} cliente${aFavor.length > 1 ? 's' : ''} con saldo a favor (${fmt(aFavor.reduce((s, c) => s + c.saldo, 0))}), no se listan.</div>` : '';
-  el.innerHTML = header + resumen + ccAgeBar(v.age, true) + cab + filas + pie;
+  el.innerHTML = header + resumen + ccAgeBar(v.age, true) + orden + cab + filas + pie;
 }
 
 // ===== COBERTURA: DESGLOSE DE CCC POR PROVEEDOR (panel al costado) =====
