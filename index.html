@@ -116,6 +116,26 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .sku-btns{display:flex;gap:6px;flex-wrap:wrap;}
 .cob-split{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:11px;align-items:start;}
 @media(max-width:900px){.cob-split{grid-template-columns:1fr;}}
+.cc-emp{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px;}
+.cc-emp button{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:'Roboto Mono',monospace;font-size:0.68rem;padding:5px 10px;border-radius:14px;cursor:pointer;}
+.cc-emp button.on{border-color:var(--accent);color:var(--accent);background:rgba(0,212,170,0.08);}
+.cc-cli{border-bottom:1px solid var(--border);}
+.cc-cli>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:7px 0;}
+.cc-cli>summary::-webkit-details-marker{display:none;}
+.cc-cli>summary:hover{background:rgba(255,255,255,0.03);}
+.cc-cli[open]>summary{background:rgba(255,255,255,0.03);}
+.cc-cps{width:100%;border-collapse:collapse;margin:0 0 8px;font-family:'Roboto Mono',monospace;font-size:0.62rem;}
+.cc-cps th{color:var(--muted);font-weight:400;text-align:left;padding:3px 4px;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:0.06em;font-size:0.55rem;}
+#pg-ctacte .cob-split>*{min-width:0;}
+.cc-cps{table-layout:fixed;}
+.cc-cps td{padding:3px 4px;border-bottom:1px solid #1a1e29;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cc-cps col.cf{width:15%;} .cc-cps col.cm{width:12%;} .cc-cps col.cs{width:24%;}
+@media(max-width:520px){.cc-cps .ccf{display:none;}}
+.cc-cps td.r,.cc-cps th.r{text-align:right;}
+.cc-age{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--border);margin:6px 0 4px;}
+.cc-age i{display:block;height:100%;}
+.cc-age-lg{display:flex;flex-wrap:wrap;gap:4px 12px;font-family:'Roboto Mono',monospace;font-size:0.6rem;color:var(--muted);margin-bottom:10px;}
+.cc-age-lg b{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:-1px;}
 .cob-detail-panel{position:sticky;top:var(--cob-sticky-top,150px);max-height:calc(100vh - var(--cob-sticky-top,150px) - 12px);overflow-y:auto;}
 @media(max-width:900px){.cob-detail-panel{position:static;max-height:none;overflow:visible;}}
 .cob-click{cursor:pointer;}
@@ -390,6 +410,7 @@ tr.sup-group-sum td{
     <button class="stab active" onclick="showSec('avance',this)">📈 Avance</button>
     <button class="stab" onclick="showSec('cobertura',this)">🗂 Cobertura</button>
     <button class="stab" onclick="showSec('entregas',this)">🚚 Entregas</button>
+    <button class="stab" onclick="showSec('ctacte',this)">💳 Cta Cte</button>
     <button class="stab" onclick="showSec('mapa',this)">🗺 Mapa</button>
     <button class="stab" onclick="showSec('historico',this)">📅 Histórico</button>
     <button class="stab" onclick="showSec('sku',this)">📦 SKU</button>
@@ -478,6 +499,21 @@ tr.sup-group-sum td{
       <div class="panel cob-detail-panel" id="ent-detail-panel">
         <div class="ptitle"><span class="dot o"></span>Clientes facturados</div>
         <div id="ent-detail"></div>
+      </div>
+      </div>
+    </div>
+    <div class="pg" id="pg-ctacte">
+      <div class="kstrip" id="kpi-cc"></div>
+      <div class="cc-emp" id="cc-emp"></div>
+      <div class="cob-split">
+      <div class="panel">
+        <div class="ptitle"><span class="dot p"></span>Saldos en cuenta corriente <span id="cc-fecha" style="font-family:'Roboto Mono',monospace;font-size:0.62rem;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;margin-left:6px"></span></div>
+        <div class="ts hm"><table><thead><tr><th>Vendedor</th><th>Clientes</th><th>Saldo</th><th>Vencido</th><th>% venc.</th><th>Mora máx.</th></tr></thead><tbody id="tb-cc"></tbody></table></div>
+        <div class="mc" id="mc-cc"></div>
+      </div>
+      <div class="panel cob-detail-panel" id="cc-detail-panel">
+        <div class="ptitle"><span class="dot o"></span>Clientes con saldo</div>
+        <div id="cc-detail"></div>
       </div>
       </div>
     </div>
@@ -1371,6 +1407,190 @@ function renderEntDetail() {
   el.innerHTML = header + resumen + cabecera + filas;
 }
 
+// ===== CUENTA CORRIENTE (saldos por cliente, Excel "saldo total" de Chess subido desde el admin) =====
+// window.SALDOS = { subido, archivo, fecha, cps:[{e,c,cn,loc,v,vn,t,nro,f,fv,ve,d,imp,s,r}] } (GET /api/saldos)
+// Se agrupa por vendedor del comprobante y por cliente. El supervisor sale del tablero (código de vendedor en A),
+// no del Excel; vendedores que no están en el tablero (sin vendedor, mostrador, etc.) van a "Sin sup.".
+// Vencido de un cliente = comprobantes vencidos con saldo positivo menos sus créditos/anticipos (los créditos
+// se descuentan primero de lo vencido), nunca menos de 0.
+window.SALDOS = null;
+let ccSel = null, ccEmp = 'TODAS';
+const CC_AGE = [
+  { k: 'av', l: 'A vencer', c: '#00d4aa' },
+  { k: 'a1', l: '1-30 días', c: '#ffcc00' },
+  { k: 'a2', l: '31-60', c: '#ff9f43' },
+  { k: 'a3', l: '61-90', c: '#ff6b35' },
+  { k: 'a4', l: '+90', c: '#ff4545' },
+];
+const ccAgeKey = x => !x.ve ? 'av' : x.d <= 30 ? 'a1' : x.d <= 60 ? 'a2' : x.d <= 90 ? 'a3' : 'a4';
+async function loadSaldos() {
+  try {
+    const r = await fetch('/api/saldos', { cache: 'no-store' });
+    if (r.ok) window.SALDOS = await r.json();
+  } catch (_) {}
+}
+function ccData() {
+  const S = window.SALDOS;
+  if (!S || !Array.isArray(S.cps)) return null;
+  const cps = ccEmp === 'TODAS' ? S.cps : S.cps.filter(x => (x.e || '—') === ccEmp);
+  const vend = {};
+  cps.forEach(x => {
+    const av = A.find(a => a.codigo === x.v);
+    const V = vend[x.v] || (vend[x.v] = { codigo: x.v, nombre: av ? av.nombre : (x.vn || ('Vendedor ' + x.v)),
+      supervisor: av ? av.supervisor : 'SIN SUPERVISOR', cli: {} });
+    const C = V.cli[x.c] || (V.cli[x.c] = { id: x.c, nombre: x.cn, loc: x.loc, ruta: x.r, cps: [] });
+    C.cps.push(x);
+  });
+  const rows = Object.values(vend).map(V => {
+    let saldo = 0, venc = 0, aFavor = 0, mora = 0, nCli = 0;
+    const age = { av: 0, a1: 0, a2: 0, a3: 0, a4: 0 };
+    const clientes = Object.values(V.cli).map(C => {
+      let s = 0, pv = 0, neg = 0, m = 0;
+      C.cps.forEach(x => {
+        s += x.s;
+        if (x.s < 0) neg += x.s;
+        else if (x.ve) { pv += x.s; if (x.d > m) m = x.d; }
+      });
+      C.cps.sort((a, b) => (a.f || '').localeCompare(b.f || ''));
+      const v = Math.max(0, Math.min(pv + neg, s));
+      return { ...C, saldo: s, vencido: v, mora: v > 0.5 ? m : 0 };
+    });
+    clientes.forEach(C => {
+      if (C.saldo > 0.5) {
+        saldo += C.saldo; nCli++; venc += C.vencido; if (C.mora > mora) mora = C.mora;
+        C.cps.forEach(x => { if (x.s > 0) age[ccAgeKey(x)] += x.s; });
+      } else if (C.saldo < -0.5) aFavor += C.saldo;
+    });
+    clientes.sort((a, b) => b.saldo - a.saldo);
+    return { codigo: V.codigo, nombre: V.nombre, supervisor: V.supervisor, saldo, vencido: venc, aFavor, mora, clientes: nCli, lista: clientes, age };
+  });
+  const empS = {}; S.cps.forEach(x => { empS[x.e || '—'] = (empS[x.e || '—'] || 0) + Math.abs(x.s); });
+  return { rows: filt(rows), empresas: Object.keys(empS).sort((a, b) => empS[b] - empS[a]) };
+}
+function ccAgeBar(age, big) {
+  const tot = CC_AGE.reduce((a, b) => a + age[b.k], 0);
+  if (tot <= 0) return '';
+  const bar = `<div class="cc-age"${big ? ' style="height:10px"' : ''}>${CC_AGE.map(b => age[b.k] > 0 ? `<i style="width:${age[b.k] / tot * 100}%;background:${b.c}" title="${b.l}: ${fmt(age[b.k])} (${(age[b.k] / tot * 100).toFixed(1)}%)"></i>` : '').join('')}</div>`;
+  const lg = `<div class="cc-age-lg">${CC_AGE.map(b => `<span><b style="background:${b.c}"></b>${b.l} ${fmtS(age[b.k])}</span>`).join('')}</div>`;
+  return bar + lg;
+}
+function ccSetEmp(e) { ccEmp = e; ccSel = null; renderCc(); }
+function renderCc() {
+  const tb = document.getElementById('tb-cc');
+  if (!tb) return;
+  const S = window.SALDOS;
+  const D = ccData();
+  const fechaTxt = S && S.fecha ? new Date(S.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  document.getElementById('cc-fecha').textContent = fechaTxt ? '· al ' + fechaTxt : '';
+  if (!D) {
+    document.getElementById('kpi-cc').innerHTML = '';
+    document.getElementById('cc-emp').innerHTML = '';
+    tb.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Todavía no se cargaron saldos. Subí el Excel de saldos de Chess desde el panel admin.</td></tr>`;
+    document.getElementById('mc-cc').innerHTML = '';
+    renderCcDetail(null);
+    return;
+  }
+  document.getElementById('cc-emp').innerHTML = D.empresas.length > 1
+    ? ['TODAS', ...D.empresas].map(e => `<button class="${ccEmp === e ? 'on' : ''}" onclick="ccSetEmp('${e.replace(/'/g, "\\'")}')">${e === 'TODAS' ? 'Todas las empresas' : e}</button>`).join('')
+    : '';
+  const base = D.rows;
+  const tot = base.reduce((s, x) => s + x.saldo, 0);
+  const venc = base.reduce((s, x) => s + x.vencido, 0);
+  const aFav = base.reduce((s, x) => s + x.aFavor, 0);
+  const cliSet = new Set(); base.forEach(x => x.lista.forEach(c => { if (c.saldo > 0.5) cliSet.add(c.id); }));
+  const age = { av: 0, a1: 0, a2: 0, a3: 0, a4: 0 }; base.forEach(x => CC_AGE.forEach(b => { age[b.k] += x.age[b.k]; }));
+  const subido = S.subido ? new Date(S.subido) : null;
+  const dias = S.fecha ? Math.round((new Date(hoyAR() + 'T12:00:00') - new Date(S.fecha + 'T12:00:00')) / 864e5) : null;
+  document.getElementById('kpi-cc').innerHTML =
+    `<div class="kpi"><div class="kl">Saldo deudor</div><div class="kv kv-big">${fmt(tot)}</div><div class="ks">${fechaTxt ? 'al ' + fechaTxt : ''}${dias > 1 ? ` <span style="color:var(--warn)">· hace ${dias} días</span>` : ''}</div></div>` +
+    `<div class="kpi o"><div class="kl">Vencido</div><div class="kv kv-big" style="color:var(--danger)">${fmt(venc)}</div><div class="ks">${tot > 0 ? (venc / tot * 100).toFixed(1) : '0.0'}% del saldo</div></div>` +
+    `<div class="kpi p"><div class="kl">Clientes con saldo</div><div class="kv">${cliSet.size}</div><div class="ks">deudores</div></div>` +
+    `<div class="kpi y"><div class="kl">Más de 90 días</div><div class="kv kv-big">${fmt(age.a4)}</div><div class="ks" title="Clientes con saldo a favor (créditos y anticipos sin aplicar): ${fmt(aFav)}">a favor ${fmtS(-aFav)} · ${subido ? 'subido ' + subido.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) + ' ' + subido.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) : ''}</div></div>`;
+  const supOrder = cur === 'TODOS' ? [...SUPS] : [cur];
+  const moraCol = d => d > 90 ? 'var(--danger)' : d > 30 ? '#ff9f43' : d > 0 ? 'var(--warn)' : 'var(--muted)';
+  let rows = '', mcRows = '';
+  supOrder.forEach(sup => {
+    const group = base.filter(x => x.supervisor === sup).sort((a, b) => b.saldo - a.saldo);
+    if (!group.length) return;
+    const col = sc(sup);
+    const gS = group.reduce((s, x) => s + x.saldo, 0), gV = group.reduce((s, x) => s + x.vencido, 0);
+    rows += `<tr class="sup-group-hdr"><td colspan="6" style="color:${col};border-bottom-color:${col}">
+      <span style="display:inline-flex;align-items:center;gap:8px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}
+        <span style="font-family:'Roboto Mono',monospace;font-size:0.6rem;font-weight:400;color:var(--muted)">${group.length} vendedores</span>
+      </span></td></tr>`;
+    mcRows += `<div style="display:flex;align-items:center;gap:7px;padding:8px 4px 4px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:${col}">
+      <span style="width:7px;height:7px;border-radius:50%;background:${col};display:inline-block"></span>${sl(sup)}</div>`;
+    group.forEach(x => {
+      const pv = x.saldo > 0 ? x.vencido / x.saldo * 100 : 0;
+      const vSel = ccSel === x.codigo ? ' sel' : '';
+      const sCol = x.saldo < 0 ? 'color:var(--accent)' : 'color:var(--text);font-weight:700';
+      rows += `<tr class="hst-vendor-row cob-click${vSel}" onclick="selectCc('${x.codigo}')" title="Ver clientes con saldo"><td class="nc"><span style="color:var(--muted);font-size:0.62rem;margin-right:4px">${x.codigo}</span>${x.nombre}</td><td>${x.clientes}</td><td style="${sCol}">${fmt(x.saldo)}</td><td style="color:${x.vencido > 0.5 ? 'var(--danger)' : 'var(--muted)'}">${fmt(x.vencido)}</td><td><div class="mbw"><div class="mbbg"><div class="mbf d" style="width:${Math.max(0, Math.min(pv, 100))}%"></div></div><span>${pv.toFixed(0)}%</span></div></td><td style="color:${moraCol(x.mora)}">${x.mora ? x.mora + ' d' : '—'}</td></tr>`;
+      mcRows += `<div class="mcard cob-click${vSel}" onclick="selectCc('${x.codigo}')" style="border-left:3px solid ${col}"><div class="mcnm"><span style="color:var(--muted);font-size:0.62rem;margin-right:4px">${x.codigo}</span>${x.nombre}</div><div class="mcr"><span>Saldo</span><span style="${sCol}">${fmt(x.saldo)}</span></div><div class="mcr"><span>Vencido</span><span style="color:${x.vencido > 0.5 ? 'var(--danger)' : 'var(--muted)'}">${fmt(x.vencido)} · ${pv.toFixed(0)}%</span></div><div class="mcr"><span>Clientes · mora máx.</span><span>${x.clientes} · <span style="color:${moraCol(x.mora)}">${x.mora ? x.mora + ' d' : '—'}</span></span></div></div>`;
+    });
+    rows += `<tr class="sup-group-sum" style="font-weight:700;background:#1a1d28">
+      <td style="color:#ffffff;font-weight:800">${sl(sup)}</td>
+      <td style="color:#ffffff">${group.reduce((s, x) => s + x.clientes, 0)}</td>
+      <td style="color:#ffffff">${fmt(gS)}</td>
+      <td style="color:var(--danger)">${fmt(gV)}</td>
+      <td style="color:var(--accent)">${gS > 0 ? (gV / gS * 100).toFixed(0) : '0'}%</td>
+      <td style="color:#ffffff">${Math.max(0, ...group.map(x => x.mora)) || '—'}${group.some(x => x.mora) ? ' d' : ''}</td></tr>`;
+  });
+  tb.innerHTML = rows || `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Sin saldos para este filtro.</td></tr>`;
+  document.getElementById('mc-cc').innerHTML = mcRows;
+  renderCcDetail(base);
+}
+function selectCc(cod) {
+  ccSel = (ccSel === cod) ? null : cod;
+  renderCc();
+  const pnl = document.getElementById('cc-detail-panel');
+  if (!pnl) return;
+  let top = 0;
+  document.querySelectorAll('header, .supbar, .stabs').forEach(h => {
+    const cs = getComputedStyle(h);
+    if (cs.position === 'sticky' || cs.position === 'fixed') top = Math.max(top, h.getBoundingClientRect().bottom);
+  });
+  if (window.innerWidth <= 900) {
+    if (ccSel) window.scrollTo({ top: pnl.getBoundingClientRect().top + window.scrollY - top - 8, behavior: 'smooth' });
+  } else {
+    if (top > 0) pnl.style.setProperty('--cob-sticky-top', (top + 8) + 'px');
+    pnl.scrollTop = 0;
+  }
+}
+function renderCcDetail(base) {
+  const el = document.getElementById('cc-detail');
+  if (!el) return;
+  const empty = msg => `<div style="text-align:center;color:var(--muted);padding:30px;font-size:0.8rem;">${msg}</div>`;
+  const h = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  if (!base) { el.innerHTML = empty('Sin datos de saldos.'); return; }
+  if (ccSel && !base.some(x => x.codigo === ccSel)) ccSel = null;
+  if (!ccSel) { el.innerHTML = empty('Elegí un vendedor de la tabla para ver sus clientes con saldo y el detalle de comprobantes.'); return; }
+  const v = base.find(x => x.codigo === ccSel);
+  const col = sc(v.supervisor);
+  const dF = d => d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(2, 4) : '—';
+  const header = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;"><span style="font-family:'Roboto Mono',monospace;font-size:0.65rem;color:var(--muted)">${v.codigo}</span><span style="font-weight:700">${h(v.nombre)}</span>${tag(v.supervisor)}</div>`;
+  const resumen = `<div style="font-family:'Roboto Mono',monospace;font-size:0.72rem;color:var(--muted)">Saldo deudor <span style="color:var(--text);font-weight:700">${fmt(v.saldo)}</span> · <span style="color:var(--danger)">${fmt(v.vencido)} vencido</span> · ${v.clientes} clientes</div>`;
+  const deudores = v.lista.filter(c => c.saldo > 0.5);
+  const aFavor = v.lista.filter(c => c.saldo < -0.5);
+  if (!deudores.length) { el.innerHTML = header + resumen + empty('No tiene clientes con saldo deudor.'); return; }
+  const max = Math.max(...deudores.map(c => c.saldo), 1);
+  const cab = `<div style="display:flex;justify-content:space-between;font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;padding:4px 0;border-bottom:1px solid var(--border)"><span>Cliente · tocá para ver comprobantes</span><span>Saldo / vencido</span></div>`;
+  const filas = deudores.map(c => `<details class="cc-cli"><summary>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.76rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${h(c.nombre)}"><span style="font-family:'Roboto Mono',monospace;font-size:0.6rem;color:var(--muted);margin-right:5px">${c.id}</span>${h(c.nombre)}</div>
+        <div style="font-family:'Roboto Mono',monospace;font-size:0.58rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${h(c.loc)}${c.loc && c.ruta ? ' · ' : ''}${h(c.ruta)}</div>
+        <div class="mbw" style="margin-top:4px;"><div class="mbbg" style="position:relative"><div class="mbf" style="width:${Math.max(3, c.saldo * 100 / max)}%;background:${col}"></div>${c.vencido > 0.5 ? `<div class="mbf d" style="position:absolute;left:0;top:0;width:${Math.max(2, c.vencido * 100 / max)}%"></div>` : ''}</div></div>
+      </div>
+      <div style="text-align:right;min-width:96px;">
+        <div style="font-family:'Roboto Mono',monospace;font-weight:700;color:var(--text)">${fmt(c.saldo)}</div>
+        <div style="font-family:'Roboto Mono',monospace;font-size:0.58rem;color:${c.vencido > 0.5 ? 'var(--danger)' : 'var(--muted)'}">${c.vencido > 0.5 ? fmt(c.vencido) + ' venc. · ' + c.mora + ' d' : 'sin vencido'}</div>
+      </div></summary>
+      <table class="cc-cps"><colgroup><col><col class="cf ccf"><col class="cf"><col class="cm"><col class="cs"></colgroup><thead><tr><th>Comprobante</th><th class="ccf">Fecha</th><th>Vto.</th><th class="r">Mora</th><th class="r">Saldo</th></tr></thead><tbody>${c.cps.map(x => `<tr><td title="${h(x.nro)}">${h(x.t || x.nro)}${x.t && x.nro ? ` <span style="color:var(--muted)">${h(x.nro.split(' ').pop())}</span>` : ''}</td><td class="ccf">${dF(x.f)}</td><td>${dF(x.fv)}</td><td class="r" style="color:${x.ve && x.s > 0 ? 'var(--danger)' : 'var(--muted)'}">${x.ve ? x.d + ' d' : '—'}</td><td class="r" style="color:${x.s < 0 ? 'var(--accent)' : 'var(--text)'}">${fmt(x.s)}</td></tr>`).join('')}</tbody></table>
+    </details>`).join('');
+  const pie = aFavor.length ? `<div style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--muted);padding:8px 0">${aFavor.length} cliente${aFavor.length > 1 ? 's' : ''} con saldo a favor (${fmt(aFavor.reduce((s, c) => s + c.saldo, 0))}), no se listan.</div>` : '';
+  el.innerHTML = header + resumen + ccAgeBar(v.age, true) + cab + filas + pie;
+}
+
 // ===== COBERTURA: DESGLOSE DE CCC POR PROVEEDOR (panel al costado) =====
 // cobSel = 'V:<codigo>' (vendedor) o 'S:<supervisor>' (suma de sus vendedores). Toggle.
 function selectCob(key){
@@ -1451,7 +1671,7 @@ function renderCobDetail(){
 function buildRanking(){const d=filt(A).sort((a,b)=>b.cumplimiento-a.cumplimiento);const m=['🥇','🥈','🥉','4️⃣','5️⃣'];document.getElementById('rtop').innerHTML=d.slice(0,5).map((x,i)=>`<div class="sr"><span class="sn">${m[i]} <span style="color:var(--muted);font-size:0.72rem">${x.codigo}</span> ${x.nombre} ${tag(x.supervisor,true)}</span><span class="sv">${x.cumplimiento}%</span></div>`).join('');document.getElementById('rbot').innerHTML=d.slice(-5).reverse().map(x=>`<div class="sr"><span class="sn" style="color:#ff4545"><span style="color:#ff454599;font-size:0.72rem">${x.codigo}</span> ${x.nombre} ${tag(x.supervisor,true)}</span><span style="font-family:'Roboto Mono',monospace;color:#ff4545">${x.cumplimiento}%</span></div>`).join('');}
 function buildSupCards(){document.getElementById('supcards').innerHTML=SUPS.map(s=>{const d=A.filter(x=>x.supervisor===s);if(!d.length)return'';const sub2=(window.SUP_SUBTOTALS||{})[s];const tf=sub2?sub2.facturacion:d.reduce((a,x)=>a+x.facturacion,0),to=sub2?sub2.objetivo:d.reduce((a,x)=>a+x.objetivo,0),tp2=sub2?sub2.proyeccion:d.reduce((a,x)=>a+x.proyeccion,0),avgC=(to>0?tp2/to*100:0).toFixed(1),ok=d.filter(x=>x.cumplimiento>=100).length,col=sc(s);return`<div class="scard" style="border-left-color:${col}"><div class="scnm" style="color:${col}">${sl(s)}</div><div class="scr"><span>Vendedores</span><span>${d.length}</span></div><div class="scr"><span>Facturado</span><span>${fmt(tf)}</span></div><div class="scr"><span>Objetivo</span><span>${fmt(to)}</span></div><div class="scr"><span>Cumpl. prom.</span><span style="color:${gc(+avgC)}">${avgC}%</span></div><div class="scr"><span>En objetivo</span><span style="color:#00d4aa">${ok}/${d.length}</span></div></div>`;}).join('');}
 
-function refresh(){buildKpiAv();buildKpiCob();buildCC();buildCF();buildCCob();buildCCCC();buildDist();buildCSF();buildCSC();renderAv();renderCob();buildRanking();buildSupCards();renderSku();if(typeof renderProv==='function')renderProv();renderEnt();if(typeof renderMapa==='function')renderMapa(false);}
+function refresh(){buildKpiAv();buildKpiCob();buildCC();buildCF();buildCCob();buildCCCC();buildDist();buildCSF();buildCSC();renderAv();renderCob();buildRanking();buildSupCards();renderSku();if(typeof renderProv==='function')renderProv();renderEnt();renderCc();if(typeof renderMapa==='function')renderMapa(false);}
 
 // ===== SKU POR VENDEDOR / PROVEEDOR: UI =====
 // Cantidad de SKU de un grupo de vendedores: artículos distintos (unión).
@@ -2803,6 +3023,7 @@ async function autoLoadFromServer() {
     showApp();
   } catch (err) { showErr(err.message); return; }
   loadLegacyExcel();
+  loadSaldos().then(renderCc);
 }
 
 // Histórico mensual y artículos disponibles: del último Excel completo, en segundo plano.

@@ -186,6 +186,29 @@
 
     <hr class="divider">
     <div class="dias-head">
+      <h2>Saldos <span style="color:var(--accent)">cta cte</span></h2>
+    </div>
+    <div class="current-info" id="cc-info">Verificando saldos cargados…</div>
+    <div class="drop-zone" id="cc-drop">
+      <input type="file" accept=".xlsx" id="cc-input" onchange="ccOnFile(this)">
+      <div class="drop-icon">💳</div>
+      <div class="drop-label">Arrastrá el Excel de saldos de Chess</div>
+      <div class="drop-sub">o hacé click para seleccionar · Solo .xlsx<br>Reporte "saldo total": una fila por comprobante con Cliente · Saldo · Vendedor</div>
+    </div>
+    <div class="file-info" id="cc-file">
+      <span class="fi-icon">📄</span>
+      <div>
+        <div class="fi-name" id="cc-fname">—</div>
+        <div class="fi-size" id="cc-fsize">—</div>
+      </div>
+      <button class="fi-clear" onclick="ccClear()">✕</button>
+    </div>
+    <div class="preview" id="cc-preview"></div>
+    <button class="btn" id="cc-btn" onclick="ccUpload()" disabled>Guardar saldos</button>
+    <div class="status-bar" id="cc-status"></div>
+
+    <hr class="divider">
+    <div class="dias-head">
       <h2>Días de <span style="color:var(--accent)">trabajo</span></h2>
       <div class="mes-nav">
         <button onclick="cambiarMes(-1)" aria-label="Mes anterior">‹</button>
@@ -234,6 +257,7 @@
     document.getElementById('app-section').style.display = 'block';
     loadCurrentInfo();
     cargarDias();
+    ccLoadInfo();
   }
 
   async function loadCurrentInfo() {
@@ -453,6 +477,148 @@
 
   function showStatus(type, msg) { const el = document.getElementById('status-bar'); el.className = 'status-bar show ' + type; el.innerHTML = msg; }
   function hideStatus() { document.getElementById('status-bar').className = 'status-bar'; }
+
+  // ===== Saldos de cuenta corriente (Excel "saldo total" de Chess) =====
+  // Una fila por comprobante con saldo. Se convierte a JSON en el navegador y se guarda con POST /api/saldos.
+  let ccParsed = null, ccFileName = '';
+  const ccSet = (id, type, msg) => { const el = document.getElementById(id); el.className = 'status-bar show ' + type; el.innerHTML = msg; };
+
+  async function ccLoadInfo() {
+    const el = document.getElementById('cc-info');
+    try {
+      const r = await fetch('/api/saldos', { cache: 'no-store' });
+      if (r.status === 404) { el.innerHTML = '<strong>Todavía no se cargaron saldos</strong>'; return; }
+      const d = await r.json();
+      const sub = d.subido ? new Date(d.subido).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short', hour12: false }) : '—';
+      const tot = (d.cps || []).reduce((a, x) => a + (x.s || 0), 0);
+      el.innerHTML = `<strong>Saldos al ${d.fecha ? d.fecha.split('-').reverse().join('/') : '—'}</strong>${(d.cps || []).length} comprobantes · saldo ${fmt(tot)}<br>Subido ${sub}${d.archivo ? ' · ' + esc(d.archivo) : ''}`;
+    } catch (_) { el.innerHTML = 'No se pudo consultar los saldos cargados.'; }
+  }
+
+  function ccOnFile(inp) { if (inp.files[0]) ccSetFile(inp.files[0]); }
+
+  async function ccSetFile(file) {
+    if (!file.name.toLowerCase().endsWith('.xlsx')) { ccSet('cc-status', 'err', '⚠️ Solo se aceptan archivos .xlsx'); return; }
+    ccFileName = file.name; ccParsed = null;
+    document.getElementById('cc-fname').textContent = file.name;
+    document.getElementById('cc-fsize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+    document.getElementById('cc-file').classList.add('show');
+    document.getElementById('cc-drop').style.display = 'none';
+    document.getElementById('cc-status').className = 'status-bar';
+    try {
+      const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+      ccParsed = leerSaldos(wb);
+      ccPreview(ccParsed);
+    } catch (err) {
+      document.getElementById('cc-preview').className = 'preview';
+      ccSet('cc-status', 'err', '❌ ' + esc(err.message));
+    }
+    document.getElementById('cc-btn').disabled = !ccParsed;
+  }
+
+  function ccClear() {
+    ccParsed = null; ccFileName = '';
+    document.getElementById('cc-input').value = '';
+    document.getElementById('cc-file').classList.remove('show');
+    document.getElementById('cc-drop').style.display = 'block';
+    document.getElementById('cc-preview').className = 'preview';
+    document.getElementById('cc-btn').disabled = true;
+  }
+
+  const ccDz = document.getElementById('cc-drop');
+  ccDz.addEventListener('dragover', e => { e.preventDefault(); ccDz.classList.add('drag'); });
+  ccDz.addEventListener('dragleave', () => ccDz.classList.remove('drag'));
+  ccDz.addEventListener('drop', e => { e.preventDefault(); ccDz.classList.remove('drag'); const f = e.dataTransfer.files[0]; if (f) ccSetFile(f); });
+
+  // Fecha de Excel (número de serie, Date o texto dd/mm/aaaa) -> AAAA-MM-DD
+  function aISO(v) {
+    if (isBlank(v)) return null;
+    if (typeof v === 'number') return new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10);
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    const m = String(v).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    return /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? String(v).slice(0, 10) : null;
+  }
+  const sinCod = s => String(s == null ? '' : s).replace(/^\s*\d+\s*-\s*/, '').trim();
+  const codN = v => { const f = typeof v === 'number' ? v : parseInt(String(v || '').trim(), 10); return isFinite(f) ? String(Math.round(f)) : ''; };
+
+  function leerSaldos(wb) {
+    const hs = hojaCon(wb, /^SALDO$/i);
+    if (!hs) throw new Error('No se encontró la hoja de saldos (falta la columna "Saldo").');
+    const col = (...names) => {
+      for (const n of names) { const i = hs.head.indexOf(n.toUpperCase()); if (i > -1) return i; }
+      return -1;
+    };
+    const C = {
+      f: col('FECHA'), e: col('DESCRIPCIÓN EMPRESA', 'DESCRIPCION EMPRESA'), c: col('CLIENTE'), cn: col('RAZÓN SOCIAL', 'RAZON SOCIAL'),
+      tc: col('COMPROBANTE'), t: col('DESCRIPCIÓN COMPROBANTE', 'DESCRIPCION COMPROBANTE'), l: col('LETRA'), se: col('SERIE'), nu: col('NÚMERO', 'NUMERO'),
+      fv: col('FECHA VENCIDO', 'FECHA VENCIMIENTO'), ve: col('VENCIDO'), d: col('DÍAS DE MORA', 'DIAS DE MORA'), imp: col('IMPORTE TOTAL'),
+      s: col('SALDO'), v: col('VENDEDOR'), vn: col('DESCRIPCIÓN VENDEDOR', 'DESCRIPCION VENDEDOR'), loc: col('LOCALIDAD'), r: col('DESCRIPCIÓN RUTA', 'DESCRIPCION RUTA'),
+    };
+    const falta = ['c', 's', 'v'].filter(k => C[k] < 0);
+    if (falta.length) throw new Error(`En la hoja "${hs.name}" faltan las columnas Cliente, Saldo o Vendedor.`);
+    const cps = []; let fecha = null, sinVend = 0;
+    for (let i = hs.h + 1; i < hs.raw.length; i++) {
+      const r = hs.raw[i]; if (!r) continue;
+      const c = codN(r[C.c]); if (!c) continue;
+      const s = num(r[C.s]);
+      if (Math.abs(s) < 0.005) continue;
+      const v = codN(r[C.v]) || '0';
+      if (v === '0') sinVend++;
+      const f = C.f > -1 ? aISO(r[C.f]) : null;
+      if (f && (!fecha || f > fecha)) fecha = f;
+      const serie = C.se > -1 && !isBlank(r[C.se]) ? String(Math.round(num(r[C.se]))).padStart(4, '0') : '';
+      const nro = C.nu > -1 && !isBlank(r[C.nu]) ? String(Math.round(num(r[C.nu]))).padStart(8, '0') : '';
+      cps.push({
+        e: C.e > -1 ? sinCod(r[C.e]) : '', c, cn: sinCod(r[C.cn]) || ('Cliente ' + c), loc: C.loc > -1 ? sinCod(r[C.loc]) : '',
+        v, vn: C.vn > -1 ? sinCod(r[C.vn]) : '',
+        t: C.t > -1 ? String(r[C.t] || '').trim() : '',
+        nro: [C.tc > -1 ? String(r[C.tc] || '').trim() : '', C.l > -1 ? String(r[C.l] || '').trim() : '', serie && nro ? serie + '-' + nro : nro].filter(Boolean).join(' '),
+        f, fv: C.fv > -1 ? aISO(r[C.fv]) : null,
+        ve: C.ve > -1 ? /^S/i.test(String(r[C.ve] || '')) : false,
+        d: C.d > -1 ? Math.round(num(r[C.d])) : 0,
+        imp: C.imp > -1 ? num(r[C.imp]) : 0, s, r: C.r > -1 ? sinCod(r[C.r]) : '',
+      });
+    }
+    if (!cps.length) throw new Error(`No se encontraron comprobantes con saldo en la hoja "${hs.name}".`);
+    return { hoja: hs.name, cps, fecha, sinVend };
+  }
+
+  function ccPreview(p) {
+    const tot = p.cps.reduce((a, x) => a + x.s, 0);
+    const venc = p.cps.filter(x => x.ve && x.s > 0).reduce((a, x) => a + x.s, 0);
+    const cli = {}; p.cps.forEach(x => { cli[x.c] = (cli[x.c] || 0) + x.s; });
+    const conSaldo = Object.values(cli).filter(s => s > 0.5).length;
+    const emp = {}; p.cps.forEach(x => { emp[x.e || '—'] = (emp[x.e || '—'] || 0) + x.s; });
+    let h = `<div class="pv-title">Vista previa · ${p.cps.length} comprobantes</div>`;
+    h += `<div class="pv-row"><span class="pv-l">Saldos al</span><span class="pv-v">${p.fecha ? p.fecha.split('-').reverse().join('/') : '—'}</span></div>`;
+    Object.entries(emp).sort((a, b) => b[1] - a[1]).forEach(([e, s]) => { h += `<div class="pv-row"><span class="pv-l">${esc(e)}</span><span class="pv-v">${fmt(s)}</span></div>`; });
+    h += `<div class="pv-row total"><span class="pv-l">Saldo total</span><span class="pv-v">${fmt(tot)}</span></div>`;
+    h += `<div class="pv-row"><span class="pv-l">Comprobantes vencidos</span><span class="pv-v">${fmt(venc)}</span></div>`;
+    h += `<div class="pv-row"><span class="pv-l">Clientes con saldo</span><span class="pv-v">${conSaldo}</span></div>`;
+    if (p.sinVend) h += `<div class="pv-avisos"><div>${p.sinVend} comprobantes sin vendedor en Chess: van al grupo "Sin sup." del tablero.</div></div>`;
+    const el = document.getElementById('cc-preview');
+    el.innerHTML = h; el.className = 'preview show';
+  }
+
+  async function ccUpload() {
+    if (!ccParsed) return;
+    const btn = document.getElementById('cc-btn');
+    btn.disabled = true; btn.textContent = '⏳ Guardando…';
+    ccSet('cc-status', 'loading', '<span class="spin">⟳</span> Guardando saldos…');
+    try {
+      const d = await postJSON('/api/saldos?pwd=' + encodeURIComponent(adminPassword),
+        JSON.stringify({ archivo: ccFileName, fecha: ccParsed.fecha, cps: ccParsed.cps }), { 'Content-Type': 'application/json' });
+      ccClear();
+      ccSet('cc-status', 'ok', `✅ Guardado: ${d.comprobantes} comprobantes, saldo ${fmt(d.saldo)}. El tablero ya los toma al recargar.`);
+      ccLoadInfo();
+    } catch (err) {
+      ccSet('cc-status', 'err', '❌ Error: ' + esc(err.message));
+      btn.disabled = false;
+    } finally {
+      btn.textContent = 'Guardar saldos';
+    }
+  }
 
   // ===== Días de trabajo por mes =====
   let diasCfg = {};            // lo guardado en el servidor
