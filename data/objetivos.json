@@ -442,7 +442,7 @@
   "general": 1942909830.099849
  },
  "2026-11": {
-  "subido": "2026-11-12T17:40:13.059Z",
+  "subido": "2026-11-19T17:50:41.999Z",
   "archivo": "Objetivos Noviembre y horas.xlsx",
   "vendedores": [
    {
@@ -696,187 +696,187 @@
    {
     "codigo": "2",
     "nombre": "OJEDA NORBERTO",
-    "horas": 4.8467
+    "horas": 5.2528
    },
    {
     "codigo": "3",
     "nombre": "VIDAL NAHUEL",
-    "horas": 6.3471
+    "horas": 6.6136
    },
    {
     "codigo": "18",
     "nombre": "HERRERA PABLO",
-    "horas": 6.3519
+    "horas": 6.4137
    },
    {
     "codigo": "21",
     "nombre": "CATAN MATIAS",
-    "horas": 6.3474
+    "horas": 6.0793
    },
    {
     "codigo": "23",
     "nombre": "DELGADO JOSÉ",
-    "horas": 6.2678
+    "horas": 5.8683
    },
    {
     "codigo": "31",
     "nombre": "RENZO RAMOS",
-    "horas": 6.5659
+    "horas": 6.5365
    },
    {
     "codigo": "44",
     "nombre": "MONGES CESAR LUIS",
-    "horas": 5.8011
+    "horas": 5.89
    },
    {
     "codigo": "54",
     "nombre": "BARTSCHAT EMILIANO NAHUEL",
-    "horas": 6.3976
+    "horas": 6.1439
    },
    {
     "codigo": "56",
     "nombre": "JUAN ANDRES SANCHEZ",
-    "horas": 2.4012
+    "horas": 2.8168
    },
    {
     "codigo": "4",
     "nombre": "TUR SPRINGER FERNANDO",
-    "horas": 6.5469
+    "horas": 6.468
    },
    {
     "codigo": "5",
     "nombre": "SCHELOVER RAUL",
-    "horas": 7.2764
+    "horas": 7.1665
    },
    {
     "codigo": "8",
     "nombre": "PARRA MAXIMILIANO",
-    "horas": 6.5752
+    "horas": 6.287
    },
    {
     "codigo": "11",
     "nombre": "SANCHEZ RICARDO",
-    "horas": 7.23
+    "horas": 7.1999
    },
    {
     "codigo": "12",
     "nombre": "GUTIERREZ MARCOS DAVID",
-    "horas": 6.2181
+    "horas": 6.1911
    },
    {
     "codigo": "16",
     "nombre": "GOMEZ MATÍAS",
-    "horas": 6.2764
+    "horas": 6.048
    },
    {
     "codigo": "19",
     "nombre": "GONZALEZ MARCELO",
-    "horas": 6.2142
+    "horas": 6.1832
    },
    {
     "codigo": "20",
     "nombre": "FLORES JAVIER",
-    "horas": 6.5419
+    "horas": 6.7063
    },
    {
     "codigo": "49",
     "nombre": "ESCOBAR RAÚL",
-    "horas": 6.1635
+    "horas": 6.454
    },
    {
     "codigo": "1",
     "nombre": "VERA ERNESTO",
-    "horas": 6.798
+    "horas": 7.2615
    },
    {
     "codigo": "9",
     "nombre": "ESTIGARRIBIA DAVID",
-    "horas": 6.0472
+    "horas": 5.7704
    },
    {
     "codigo": "10",
     "nombre": "BRITEZ EMMANUEL",
-    "horas": 5.9921
+    "horas": 5.724
    },
    {
     "codigo": "24",
     "nombre": "AZULA NICOLAS",
-    "horas": 6.3206
+    "horas": 6.1968
    },
    {
     "codigo": "27",
     "nombre": "GOMEZ ADRIÁN",
-    "horas": 5.8754
+    "horas": 5.9541
    },
    {
     "codigo": "28",
     "nombre": "GOMEZ PABLO",
-    "horas": 5.654
+    "horas": 5.7579
    },
    {
     "codigo": "33",
     "nombre": "ESQUIVEL NICOLAS",
-    "horas": 5.4305
+    "horas": 5.4006
    },
    {
     "codigo": "36",
     "nombre": "IBARROLA JORGE",
-    "horas": 6.5999
+    "horas": 6.4565
    },
    {
     "codigo": "37",
     "nombre": "SALAJ EMILIO",
-    "horas": 5.7003
+    "horas": 5.7223
    },
    {
     "codigo": "40",
     "nombre": "SOLIS EMMANUEL",
-    "horas": 4.5688
+    "horas": 4.787
    },
    {
     "codigo": "52",
     "nombre": "RAVAROTTO EMANUEL",
-    "horas": 5.1445
+    "horas": 4.7011
    },
    {
     "codigo": "53",
     "nombre": "SANDOVAL RODRIGO",
-    "horas": 4.6732
+    "horas": 4.5501
    },
    {
     "codigo": "15",
     "nombre": "GALARZA GERARDO",
-    "horas": 4.8003
+    "horas": 4.3241
    },
    {
     "codigo": "22",
     "nombre": "ALMIRON NICOLAS",
-    "horas": 5.0574
+    "horas": 5.0022
    },
    {
     "codigo": "7",
     "nombre": "VALLEJOS EDUARDO",
-    "horas": 3.1596
+    "horas": 3.0871
    },
    {
     "codigo": "32",
     "nombre": "CABRAL GONZALO",
-    "horas": 4.0328
+    "horas": 3.8409
    },
    {
     "codigo": "57",
     "nombre": "FEDERRATH MARTIN",
-    "horas": 4.5471
+    "horas": 4.4039
    },
    {
     "codigo": "59",
     "nombre": "LEIVA SILVIO",
-    "horas": 1.4428
+    "horas": 1.2499
    },
    {
     "codigo": "60",
     "nombre": "SILVA ADRIAN",
-    "horas": 2.9898
+    "horas": 3.3106
    }
   ],
   "subtotales": {
