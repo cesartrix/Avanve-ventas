@@ -118,6 +118,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 @media(max-width:900px){.cob-split{grid-template-columns:1fr;}}
 .cc-emp{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px;}
 .cc-emp button{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:'Roboto Mono',monospace;font-size:0.68rem;padding:5px 10px;border-radius:14px;cursor:pointer;}
+.cc-xls{margin-left:auto;background:#1d6f42;border:1px solid #2a8a55;color:#fff;font-family:'Roboto',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.02em;text-transform:none;padding:5px 12px;border-radius:6px;cursor:pointer;}
+.cc-xls:hover{background:#238a52;}
 .cc-esp{display:inline-flex;align-items:center;gap:6px;margin-left:auto;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:'Roboto Mono',monospace;font-size:0.68rem;padding:4px 10px;border-radius:14px;cursor:pointer;user-select:none;}
 .cc-esp.on{border-color:var(--accent);color:var(--accent);}
 .cc-esp input{accent-color:var(--accent);margin:0;cursor:pointer;}
@@ -511,7 +513,7 @@ tr.sup-group-sum td{
       <div class="cc-emp" id="cc-emp"></div>
       <div class="cob-split">
       <div class="panel">
-        <div class="ptitle"><span class="dot p"></span>Saldos en cuenta corriente <span id="cc-fecha" style="font-family:'Roboto Mono',monospace;font-size:0.62rem;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;margin-left:6px"></span></div>
+        <div class="ptitle" style="display:flex;align-items:center;flex-wrap:wrap;gap:6px"><span style="display:inline-flex;align-items:center;gap:8px"><span class="dot p"></span>Saldos en cuenta corriente <span id="cc-fecha" style="font-family:'Roboto Mono',monospace;font-size:0.62rem;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;margin-left:6px"></span></span><button class="cc-xls" onclick="exportCcExcel()" title="Bajar a Excel lo que se ve (con los filtros de supervisor, empresa y clientes especiales): vendedores, clientes y comprobantes">⬇ Excel</button></div>
         <div class="ts hm"><table><thead><tr><th>Vendedor</th><th>Clientes</th><th>Saldo</th><th>Vencido</th><th>% venc.</th><th>Mora máx.</th></tr></thead><tbody id="tb-cc"></tbody></table></div>
         <div class="mc" id="mc-cc"></div>
       </div>
@@ -1578,6 +1580,78 @@ function selectCc(cod) {
     if (top > 0) pnl.style.setProperty('--cob-sticky-top', (top + 8) + 'px');
     pnl.scrollTop = 0;
   }
+}
+// Exporta a Excel lo que muestra la pestaña Cta Cte, con los mismos filtros (supervisor, empresa, clientes especiales).
+// Hojas: Vendedores (resumen + antigüedad), Clientes, Comprobantes (detalle completo) e Info (filtros y fecha).
+function exportCcExcel() {
+  const S = window.SALDOS, D = ccData();
+  if (!S || !D || typeof XLSX === 'undefined') { alert('No hay saldos cargados para exportar.'); return; }
+  const fecha = d => { if (!d) return null; const [y, m, dd] = d.split('-').map(Number); return new Date(y, m - 1, dd); };
+  const tramo = x => !x.ve ? 'A vencer' : x.d <= 30 ? '1-30 días' : x.d <= 60 ? '31-60 días' : x.d <= 90 ? '61-90 días' : 'Más de 90 días';
+  const r2 = n => Math.round(n * 100) / 100;
+  const supOrder = cur === 'TODOS' ? [...SUPS] : [cur];
+  const rows = [...D.rows].sort((a, b) => (supOrder.indexOf(a.supervisor) - supOrder.indexOf(b.supervisor)) || (b.saldo - a.saldo));
+  const vend = [['Supervisor', 'Cód. vendedor', 'Vendedor', 'Clientes con saldo', 'Saldo deudor', 'Vencido', '% vencido', 'Mora máx. (días)',
+    'A vencer', '1-30 días', '31-60 días', '61-90 días', 'Más de 90 días', 'Saldo a favor']];
+  const cli = [['Supervisor', 'Cód. vendedor', 'Vendedor', 'Cód. cliente', 'Cliente', 'Localidad', 'Ruta', 'Cliente especial',
+    'Saldo', 'Vencido', 'Mora máx. (días)', 'Comprobantes', 'Situación']];
+  const cps = [['Supervisor', 'Cód. vendedor', 'Vendedor', 'Empresa', 'Cód. cliente', 'Cliente', 'Localidad', 'Ruta', 'Cliente especial',
+    'Tipo comprobante', 'Número', 'Fecha', 'Vencimiento', 'Vencido', 'Días de mora', 'Antigüedad', 'Importe total', 'Saldo']];
+  rows.forEach(v => {
+    const sup = sl(v.supervisor);
+    vend.push([sup, +v.codigo, v.nombre, v.clientes, r2(v.saldo), r2(v.vencido), v.saldo > 0 ? v.vencido / v.saldo : 0, v.mora || 0,
+      r2(v.age.av), r2(v.age.a1), r2(v.age.a2), r2(v.age.a3), r2(v.age.a4), r2(v.aFavor)]);
+    [...v.lista].sort((a, b) => b.saldo - a.saldo).forEach(c => {
+      const esp = CC_ESPECIALES.has(c.id) ? 'SI' : 'NO';
+      cli.push([sup, +v.codigo, v.nombre, +c.id, c.nombre, c.loc || '', c.ruta || '', esp, r2(c.saldo), r2(c.vencido), c.mora || 0,
+        c.cps.length, c.saldo > 0.5 ? 'Deudor' : c.saldo < -0.5 ? 'Saldo a favor' : 'Saldado']);
+      c.cps.forEach(x => cps.push([sup, +v.codigo, v.nombre, x.e || '', +c.id, c.nombre, x.loc || '', x.r || '', esp,
+        x.t || '', x.nro || '', fecha(x.f), fecha(x.fv), x.ve ? 'SI' : 'NO', x.ve ? x.d : 0, x.s > 0 ? tramo(x) : 'Crédito / a favor', r2(x.imp), r2(x.s)]));
+    });
+  });
+  const hoja = (aoa, money, pct, dates, widths) => {
+    const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+    const rg = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = 1; R <= rg.e.r; R++) {
+      money.forEach(C => { const c = ws[XLSX.utils.encode_cell({ r: R, c: C })]; if (c && c.t === 'n') c.z = '#,##0.00'; });
+      pct.forEach(C => { const c = ws[XLSX.utils.encode_cell({ r: R, c: C })]; if (c && c.t === 'n') c.z = '0.0%'; });
+      dates.forEach(C => { const c = ws[XLSX.utils.encode_cell({ r: R, c: C })]; if (c && (c.t === 'd' || c.t === 'n')) c.z = 'dd/mm/yyyy'; });
+    }
+    ws['!autofilter'] = { ref: ws['!ref'] };
+    ws['!cols'] = widths.map(w => ({ wch: w }));
+    return ws;
+  };
+  const filtros = [
+    ['Saldos de cuenta corriente'],
+    ['Saldos al', fecha(S.fecha)],
+    ['Actualizado', S.subido ? new Date(S.subido) : null],
+    ['Exportado', new Date()],
+    ['Supervisor', cur === 'TODOS' ? 'Todos' : sl(cur)],
+    ['Empresa', ccEmp === 'TODAS' ? 'Todas' : ccEmp],
+    ['Clientes especiales', ccConEsp ? 'Incluidos' : 'Excluidos (FULL 24, MILA, IMPERIO TWO)'],
+    [],
+    ['Saldo deudor', r2(D.rows.reduce((s, x) => s + x.saldo, 0))],
+    ['Vencido', r2(D.rows.reduce((s, x) => s + x.vencido, 0))],
+    ['Saldo a favor', r2(D.rows.reduce((s, x) => s + x.aFavor, 0))],
+    [],
+    ['Notas'],
+    ['Saldo deudor: suma de los clientes con saldo positivo. Los clientes con saldo a favor se informan aparte.'],
+    ['Vencido de un cliente: comprobantes vencidos menos sus créditos/anticipos (se descuentan primero de lo vencido).'],
+    ['Supervisor: el del tablero según el código de vendedor ("Sin sup." = sin vendedor o vendedor fuera del tablero).'],
+    ['Antigüedad (hoja Vendedores): comprobantes con saldo positivo de clientes deudores, por días de mora.'],
+  ];
+  const wsI = XLSX.utils.aoa_to_sheet(filtros, { cellDates: true });
+  ['B2'].forEach(a => { if (wsI[a]) wsI[a].z = 'dd/mm/yyyy'; });
+  ['B3', 'B4'].forEach(a => { if (wsI[a]) wsI[a].z = 'dd/mm/yyyy hh:mm'; });
+  ['B9', 'B10', 'B11'].forEach(a => { if (wsI[a]) wsI[a].z = '#,##0.00'; });
+  wsI['!cols'] = [{ wch: 22 }, { wch: 40 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, hoja(vend, [4, 5, 8, 9, 10, 11, 12, 13], [6], [], [16, 8, 28, 10, 16, 16, 10, 10, 15, 15, 15, 15, 15, 15]), 'Vendedores');
+  XLSX.utils.book_append_sheet(wb, hoja(cli, [8, 9], [], [], [16, 8, 26, 9, 36, 18, 22, 9, 15, 15, 10, 8, 13]), 'Clientes');
+  XLSX.utils.book_append_sheet(wb, hoja(cps, [16, 17], [], [11, 12], [16, 8, 26, 22, 9, 36, 18, 22, 9, 26, 22, 11, 11, 8, 8, 16, 15, 15]), 'Comprobantes');
+  XLSX.utils.book_append_sheet(wb, wsI, 'Info');
+  const suf = [cur === 'TODOS' ? '' : sl(cur), ccEmp === 'TODAS' ? '' : ccEmp, ccConEsp ? 'con_especiales' : ''].filter(Boolean).join('_').replace(/[^\wÁÉÍÓÚÑáéíóúñ-]+/g, '_');
+  XLSX.writeFile(wb, `CtaCte_${S.fecha || hoyAR()}${suf ? '_' + suf : ''}.xlsx`, { cellDates: true });
 }
 function renderCcDetail(base) {
   const el = document.getElementById('cc-detail');
