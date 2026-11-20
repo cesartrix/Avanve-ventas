@@ -118,6 +118,10 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 @media(max-width:900px){.cob-split{grid-template-columns:1fr;}}
 .cc-emp{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px;}
 .cc-emp button{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:'Roboto Mono',monospace;font-size:0.68rem;padding:5px 10px;border-radius:14px;cursor:pointer;}
+.cc-esp{display:inline-flex;align-items:center;gap:6px;margin-left:auto;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:'Roboto Mono',monospace;font-size:0.68rem;padding:4px 10px;border-radius:14px;cursor:pointer;user-select:none;}
+.cc-esp.on{border-color:var(--accent);color:var(--accent);}
+.cc-esp input{accent-color:var(--accent);margin:0;cursor:pointer;}
+.cc-esp span{opacity:0.75;}
 .cc-emp button.on{border-color:var(--accent);color:var(--accent);background:rgba(0,212,170,0.08);}
 .cc-cli{border-bottom:1px solid var(--border);}
 .cc-cli>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:7px 0;}
@@ -1415,6 +1419,16 @@ function renderEntDetail() {
 // se descuentan primero de lo vencido), nunca menos de 0.
 window.SALDOS = null;
 let ccSel = null, ccEmp = 'TODAS';
+// Clientes especiales (FULL 24, MILA, IMPERIO TWO): el tilde "Clientes especiales" los muestra u oculta.
+// Por defecto se muestran; la elección queda guardada en este navegador.
+const CC_ESPECIALES = new Set([57,209,778,1073,1823,1975,2041,2133,2200,2211,2212,2213,2214,2224,2225,2226,2228,2231,2304,2375,2468,3058,3192,3565,3712,4231,4410,4758,4975,5300,22156,22157,22158,22159,22160,22161,22162,22163,22164,22165,22166,22167,22168,22169,22170,22171,22172,22173,22174,22175,22176,876,2279,2280,2281,2283,2284,2287,2289,2290,2291,2293,2667,3762,4606,4701,4848,4896,5003].map(String));
+let ccConEsp = true;
+try { ccConEsp = localStorage.getItem('ccConEsp') !== '0'; } catch (_) {}
+function ccSetEsp(on) {
+  ccConEsp = !!on;
+  try { localStorage.setItem('ccConEsp', ccConEsp ? '1' : '0'); } catch (_) {}
+  renderCc();
+}
 // Orden del panel de clientes: campo (saldo | vencido | mora) y dirección (-1 = mayor a menor)
 let ccOrd = { k: 'saldo', dir: -1 };
 function ccSetOrd(k) {
@@ -1439,7 +1453,7 @@ async function loadSaldos() {
 function ccData() {
   const S = window.SALDOS;
   if (!S || !Array.isArray(S.cps)) return null;
-  const cps = ccEmp === 'TODAS' ? S.cps : S.cps.filter(x => (x.e || '—') === ccEmp);
+  const cps = S.cps.filter(x => (ccEmp === 'TODAS' || (x.e || '—') === ccEmp) && (ccConEsp || !CC_ESPECIALES.has(x.c)));
   const vend = {};
   cps.forEach(x => {
     const av = A.find(a => a.codigo === x.v);
@@ -1497,9 +1511,10 @@ function renderCc() {
     renderCcDetail(null);
     return;
   }
-  document.getElementById('cc-emp').innerHTML = D.empresas.length > 1
+  const espS = S.cps.filter(x => CC_ESPECIALES.has(x.c) && (ccEmp === 'TODAS' || (x.e || '—') === ccEmp)).reduce((a, x) => a + x.s, 0);
+  document.getElementById('cc-emp').innerHTML = (D.empresas.length > 1
     ? ['TODAS', ...D.empresas].map(e => `<button class="${ccEmp === e ? 'on' : ''}" onclick="ccSetEmp('${e.replace(/'/g, "\\'")}')">${e === 'TODAS' ? 'Todas las empresas' : e}</button>`).join('')
-    : '';
+    : '') + `<label class="cc-esp${ccConEsp ? ' on' : ''}" title="FULL 24, MILA e IMPERIO TWO (${CC_ESPECIALES.size} códigos de cliente) · saldo ${fmt(espS)}"><input type="checkbox" ${ccConEsp ? 'checked' : ''} onchange="ccSetEsp(this.checked)">Clientes especiales <span>${fmtS(espS)}</span></label>`;
   const base = D.rows;
   const tot = base.reduce((s, x) => s + x.saldo, 0);
   const venc = base.reduce((s, x) => s + x.vencido, 0);
