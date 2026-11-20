@@ -1420,13 +1420,13 @@ function renderEntDetail() {
 window.SALDOS = null;
 let ccSel = null, ccEmp = 'TODAS';
 // Clientes especiales (FULL 24, MILA, IMPERIO TWO): el tilde "Clientes especiales" los muestra u oculta.
-// Por defecto se muestran; la elección queda guardada en este navegador.
+// Por defecto NO se muestran; si se tilda, se agregan. La elección queda guardada en este navegador.
 const CC_ESPECIALES = new Set([57,209,778,1073,1823,1975,2041,2133,2200,2211,2212,2213,2214,2224,2225,2226,2228,2231,2304,2375,2468,3058,3192,3565,3712,4231,4410,4758,4975,5300,22156,22157,22158,22159,22160,22161,22162,22163,22164,22165,22166,22167,22168,22169,22170,22171,22172,22173,22174,22175,22176,876,2279,2280,2281,2283,2284,2287,2289,2290,2291,2293,2667,3762,4606,4701,4848,4896,5003].map(String));
-let ccConEsp = true;
-try { ccConEsp = localStorage.getItem('ccConEsp') !== '0'; } catch (_) {}
+let ccConEsp = false;
+try { ccConEsp = localStorage.getItem('ccConEsp2') === '1'; } catch (_) {}
 function ccSetEsp(on) {
   ccConEsp = !!on;
-  try { localStorage.setItem('ccConEsp', ccConEsp ? '1' : '0'); } catch (_) {}
+  try { localStorage.setItem('ccConEsp2', ccConEsp ? '1' : '0'); } catch (_) {}
   renderCc();
 }
 // Orden del panel de clientes: campo (saldo | vencido | mora) y dirección (-1 = mayor a menor)
